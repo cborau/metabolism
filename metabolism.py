@@ -39,7 +39,7 @@ print("Executing in ", CURR_PATH)
 # Minimum number of agents per direction (x,y,z). 
 # If domain is not cubical, N is asigned to the shorter dimension and more agents are added to the longer ones
 # +--------------------------------------------------------------------+
-N = 16
+N = 5
 
 # Time simulation parameters
 # +--------------------------------------------------------------------+
@@ -52,8 +52,8 @@ ECM_K_ELAST = 2.0  # [N/units/kg]
 ECM_D_DUMPING = 0.4  # [N*s/units/kg]
 ECM_ETA = 1.0  # [1/time]
 
-#BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]  # +X,-X,+Y,-Y,+Z,-Z
-BOUNDARY_COORDS = [1000.0, -1000.0, 650.0, -650.0, 150.0, -150.0] # microdevice dimensions in um
+BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]  # +X,-X,+Y,-Y,+Z,-Z
+#BOUNDARY_COORDS = [1000.0, -1000.0, 650.0, -650.0, 150.0, -150.0] # microdevice dimensions in um
 #BOUNDARY_COORDS = [coord / 1000.0 for coord in BOUNDARY_COORDS] # in mm
 BOUNDARY_DISP_RATES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # perpendicular to each surface (+X,-X,+Y,-Y,+Z,-Z) [units/time]
 BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/time]
@@ -146,6 +146,8 @@ BOUNDARY_CONC_FIXED_MULTI = [[-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
 
 INIT_ECM_CONCENTRATION_VALS = [0.0, 0.0]  # initial concentration of each species on the ECM agents
 INIT_CELL_CONCENTRATION_VALS = [0.0, 0.0]  # initial concentration of each species on the CELL agents
+INIT_CELL_CONSUMPTION_RATES = [0.0, 0.0]  # consumption rate of each species by the CELL agents 
+INIT_CELL_PRODUCTION_RATES = [0.0, 0.0]  # production rate of each species by the CELL agents 
 
 # Cell agent related paramenters
 # +--------------------------------------------------------------------+
@@ -616,7 +618,7 @@ def getRandomCoordsAroundPoint(n, px, py, pz, radius):
 # This class is used to ensure that corner agents are assigned the first 8 ids
 class initAgentPopulations(pyflamegpu.HostFunction):
     def run(self, FLAMEGPU):
-        global INIT_ECM_CONCENTRATION_VALS, INIT_CELL_CONCENTRATION_VALS, N_SPECIES, INCLUDE_DIFFUSION, INCLUDE_CELLS, N_CELLS
+        global INIT_ECM_CONCENTRATION_VALS, INIT_CELL_CONCENTRATION_VALS, INIT_CELL_CONSUMPTION_RATES, INIT_CELL_PRODUCTION_RATES, N_SPECIES, INCLUDE_DIFFUSION, INCLUDE_CELLS, N_CELLS
         # BOUNDARY CORNERS
         current_id = FLAMEGPU.environment.getPropertyUInt("CURRENT_ID")
         coord_boundary = FLAMEGPU.environment.getPropertyArrayFloat("COORDS_BOUNDARIES")
@@ -760,6 +762,8 @@ class initAgentPopulations(pyflamegpu.HostFunction):
                 instance.setVariableFloat("k_elast", k_elast)
                 instance.setVariableFloat("d_dumping", d_dumping)
                 instance.setVariableArrayFloat("C_sp", INIT_CELL_CONCENTRATION_VALS)
+                instance.setVariableArrayFloat("k_consumption", INIT_CELL_CONSUMPTION_RATES)
+                instance.setVariableArrayFloat("k_production", INIT_CELL_PRODUCTION_RATES)
                 instance.setVariableFloat("radius", radius)
                 cycle_phase = random.randint(1, 4) # [1:G1] [2:S] [3:G2] [4:M]
                 instance.setVariableInt("cycle_phase", cycle_phase)
@@ -1368,7 +1372,7 @@ def manageLogs(steps, is_ensemble, idx):
     for step in steps:
         stepcount = step.getStepCount()
         if stepcount % SAVE_EVERY_N_STEPS == 0 or stepcount == 1:
-            # ECM_agents = step.getAgent("ECM")
+            ECM_agents = step.getAgent("ECM")
             # ECM_agent_counts[counter] = ECM_agents.getCount()
 
             # CELL_agents = step.getAgent("CELL")

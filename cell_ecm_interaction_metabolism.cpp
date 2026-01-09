@@ -6,8 +6,13 @@ FLAMEGPU_AGENT_FUNCTION(cell_ecm_interaction_metabolism, flamegpu::MessageArray3
   float agent_y = FLAMEGPU->getVariable<float>("y");
   float agent_z = FLAMEGPU->getVariable<float>("z");
 
+  const float TIME_STEP = FLAMEGPU->environment.getProperty<float>("TIME_STEP");
+  
   // Agent array variables
   const uint8_t N_SPECIES = 2; // WARNING: this variable must be hard coded to have the same value as the one defined in the main python function.
+  const uint8_t ECM_POPULATION_SIZE = 125; // WARNING: this variable must be hard coded to have the same value as the one defined in the main python function.
+  auto C_SP_MACRO = FLAMEGPU->environment.getMacroProperty<float, N_SPECIES, ECM_POPULATION_SIZE>("C_SP_MACRO");
+  
   float k_consumption[N_SPECIES] = {};
   for (int i = 0; i < N_SPECIES; i++) {
     k_consumption[i] = FLAMEGPU->getVariable<float, N_SPECIES>("k_consumption", i);
@@ -42,47 +47,25 @@ FLAMEGPU_AGENT_FUNCTION(cell_ecm_interaction_metabolism, flamegpu::MessageArray3
 
   //Define message variables (agent sending the input message)
   int message_id = 0;
-  float message_x = 0.0;
-  float message_y = 0.0;
-  float message_z = 0.0;
-  uint8_t message_grid_i = 0;
-  uint8_t message_grid_j = 0;
-  uint8_t message_grid_k = 0;
-  const uint8_t message_C_sp_ARRAY_SIZE = 2; // WARNING: this variable must be hard coded to have the same value as the one defined in the main python function.
-  float message_C_sp[message_C_sp_ARRAY_SIZE] = {};
+  int message_grid_lin_id = 0;
+  float message_C_sp[N_SPECIES] = {};
 
-  // TODO: reads the closest ECM agent grid_lin_id and computes metabolism, updating both the calling agnent and Macro C_sp values accordingly
+  // Reads the closest ECM agent grid_lin_id to read the corresponding C_SP_MACRO value
+  // Then computes metabolism, updating both the cell calling agent and C_SP_MACRO values accordingly
   // The closest ECM agent
   const auto message = FLAMEGPU->message_in.at(agent_grid_i, agent_grid_j, agent_grid_k);
   message_id = message.getVariable<int>("id");
-  message_x = message.getVariable<float>("x");
-  message_y = message.getVariable<float>("y");
-  message_z = message.getVariable<float>("z");
-  message_grid_i = message.getVariable<uint8_t>("grid_i");
-  message_grid_j = message.getVariable<uint8_t>("grid_j");
-  message_grid_k = message.getVariable<uint8_t>("grid_k");
-  for (int i = 0; i < message_C_sp_ARRAY_SIZE; i++) {
-    message_C_sp[i] = message.getVariable<float, message_C_sp_ARRAY_SIZE>("C_sp", i);
-  }
-
-
-  //Set agent variables
-  FLAMEGPU->setVariable<int>("id", agent_id);
-  FLAMEGPU->setVariable<float>("x", agent_x);
-  FLAMEGPU->setVariable<float>("y", agent_y);
-  FLAMEGPU->setVariable<float>("z", agent_z);
-
+  message_grid_lin_id = FLAMEGPU->getVariable<int>("grid_lin_id");
   for (int i = 0; i < N_SPECIES; i++) {
-    FLAMEGPU->setVariable<float, N_SPECIES>("k_consumption", i, k_consumption[i]);
-  }
-
-  for (int i = 0; i < N_SPECIES; i++) {
-    FLAMEGPU->setVariable<float, N_SPECIES>("k_production", i, k_production[i]);
-  }
-
-  for (int i = 0; i < N_SPECIES; i++) {
+    message_C_sp[i] = (float)C_SP_MACRO[i][agent_grid_lin_id]; // read concentration of species from the MACRO variable
+    // compute metabolism
+    float delta_C = (-k_consumption[i] + k_production[i]) * TIME_STEP; // TODO: CHECK EQUATION
+    // Update ECM MACRO variable
+    C_SP_MACRO[i][message_grid_lin_id] += delta_C;
+    C_sp[i] += delta_C; // update cell species concentration
     FLAMEGPU->setVariable<float, N_SPECIES>("C_sp", i, C_sp[i]);
   }
+
 
 
   return flamegpu::ALIVE;
