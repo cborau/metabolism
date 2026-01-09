@@ -16,7 +16,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_output_grid_location_data, flamegpu::MessageNone, fl
     FLAMEGPU->message_out.setVariable<float, N_SPECIES>("C_sp", i, ncol);
   }
   FLAMEGPU->message_out.setVariable<float>("k_elast", FLAMEGPU->getVariable<float>("k_elast"));
-  FLAMEGPU->message_out.setVariable<uint8_t>("d_dumping", FLAMEGPU->getVariable<uint8_t>("d_dumping"));
+  FLAMEGPU->message_out.setVariable<float>("d_dumping", FLAMEGPU->getVariable<float>("d_dumping"));
   FLAMEGPU->message_out.setVariable<float>("vx", FLAMEGPU->getVariable<float>("vx"));
   FLAMEGPU->message_out.setVariable<float>("vy", FLAMEGPU->getVariable<float>("vy"));
   FLAMEGPU->message_out.setVariable<float>("vz", FLAMEGPU->getVariable<float>("vz"));  

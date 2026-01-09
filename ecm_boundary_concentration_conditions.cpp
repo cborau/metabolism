@@ -1,6 +1,5 @@
 // interacts with the boundaries in there is external diffusion
 FLAMEGPU_AGENT_FUNCTION(ecm_boundary_concentration_conditions, flamegpu::MessageNone, flamegpu::MessageNone) {
-  // TODO: implement boundary conditions for ECM agents
   //Get agent variables (agent calling the function)
   int agent_id = FLAMEGPU->getVariable<int>("id");
   float agent_x = FLAMEGPU->getVariable<float>("x");
@@ -59,7 +58,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_boundary_concentration_conditions, flamegpu::Message
   for (int i = 0; i < N_SPECIES; i++) { // loop through the species
     max_conc = 0.0;             // if an agent is touching several boundaries, the maximum concentration is considered
     for (int j = 0; j < 6; j++) {     // loop through the 6 boundaries
-      if ((id == 9) && (DEBUG_PRINTING == 1)){             // print first agent for debugging
+      if ((agent_id == 9) && (DEBUG_PRINTING == 1)){             // print first agent for debugging
         printf("species id: %d, boundary: [%d] , initial conc -> %g  \n", i+1, j+1, (float)BOUNDARY_CONC_INIT_MULTI[i][j]);
         printf("species id: %d, boundary: [%d] , fixed conc -> %g  \n", i+1, j+1, (float)BOUNDARY_CONC_FIXED_MULTI[i][j]);
       }    

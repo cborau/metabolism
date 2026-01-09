@@ -96,11 +96,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MessageArray3D, flamegpu:
   float cos_x = 0.0;
   float cos_y = 0.0;
   float cos_z = 0.0;
-   // angle (in radians) between agent orientation vector and direction vector
-  float angle_agent_ori_dir = 0.0;
-  float angle_message_ori_dir = 0.0;
-  float cos_ori_agent = 0.0;
-  float cos_ori_message = 0.0;
+
   // angle (in radians) between agent velocity vector and direction vector
   float angle_agent_v_dir = 0.0;
   float angle_message_v_dir = 0.0;
@@ -133,9 +129,8 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MessageArray3D, flamegpu:
   float n_back_C_sp[N_SPECIES] = {};  
   
   const float TIME_STEP = FLAMEGPU->environment.getProperty<float>("TIME_STEP");
-    
-  //printf("Interaction agent %d [%d %d %d]\n", id, agent_grid_i, agent_grid_j, agent_grid_k);
-
+  printf("Interaction agent %d [%d %d %d]\n", id, agent_grid_i, agent_grid_j, agent_grid_k);
+  int message_count = 0;
   // Iterate location messages, accumulating relevant data and counts.
   for (const auto &message : FLAMEGPU->message_in(agent_grid_i, agent_grid_j, agent_grid_k)) {
     message_id = message.getVariable<int>("id");
@@ -153,7 +148,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MessageArray3D, flamegpu:
     j_diff = abs(agent_grid_j - message_grid_j);
     k_diff = abs(agent_grid_k - message_grid_k);
     conn = i_diff + j_diff + k_diff;
-
+    message_count++;
     /*
     if (id == 9 || id == 10 || id == 13 || id == 14 || id == 25 || id == 26 || id == 29 || id == 30) {
         printf("agent id %d, agent grid [%d %d %d] -> (message %d): message grid [%d %d %d], conn = %d \n", id, agent_grid_i, agent_grid_j, agent_grid_k, message_id, message_grid_i, message_grid_j, message_grid_k, conn);
@@ -161,7 +156,8 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MessageArray3D, flamegpu:
     */
     // If conn < 2 only the Neuman neighbourhood is checked. conn < 4 checks the 26 surrounding agents
     // BEWARE!!: grid domain wraps itself, meaning that agents at the grid boundaries, read messages from opposite boundaries. A grid distance condition must be added to avoid that. 
-    
+    printf("agent id %d, agent grid [%d %d %d], message count %d -> (message %d): message grid [%d %d %d], message C_sp1 %d, message C_sp2 %d, conn = %d \n", id, agent_grid_i, agent_grid_j, agent_grid_k, message_count, message_id, message_grid_i, message_grid_j, message_grid_k, message_C_sp[0], message_C_sp[1], conn);
+
     if ((id != message_id) && (conn < 4) && (i_diff < 2) && (j_diff < 2) && (k_diff < 2)){
       if (conn < 2) {
         grid_equilibrium_distance = ECM_ECM_EQUILIBRIUM_DISTANCE; //Neuman neighbourhood
@@ -234,13 +230,14 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MessageArray3D, flamegpu:
       agent_fx += -1 * total_f * cos_x; // minus comes from the direction definition (agent-message)
       agent_fy += -1 * total_f * cos_y;
       agent_fz += -1 * total_f * cos_z;		
-
-
-      if (DEBUG_PRINTING == 1 && (id == 9 || id == 10 || id == 13 || id == 22)) {
+      
+      //if (DEBUG_PRINTING == 1 && (id == 9 || id == 10 || id == 13 || id == 22)) {
+      /*if (DEBUG_PRINTING == 1) {
         printf("ECM interaction [id1: %d - id2: %d] agent_pos (%2.6f, %2.6f, %2.6f), message_pos (%2.6f, %2.6f, %2.6f)\n", id, message_id, agent_x, agent_y, agent_z, message_x, message_y, message_z);
         printf("ECM interaction id1: %d - id2: %d distance -> (%2.6f)\n", id, message_id, distance);
         printf("ECM interaction id1: %d - id2: %d total_f -> %2.6f (%2.6f , %2.6f, %2.6f)\n", id, message_id, total_f, -1 * total_f * cos_x, -1 * total_f * cos_y, -1 * total_f * cos_z);
       }
+      */
     }
   }
 
@@ -250,6 +247,8 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MessageArray3D, flamegpu:
   FLAMEGPU->setVariable<float>("fz", agent_fz);
   //Apply diffusion equation
   if (INCLUDE_DIFFUSION == 1){
+    printf("DENTRO DIFFUSION agent id %d, agent grid [%d %d %d] -> (message %d): message grid [%d %d %d], conn = %d \n", id, agent_grid_i, agent_grid_j, agent_grid_k, message_id, message_grid_i, message_grid_j, message_grid_k, conn);
+
     float R = 0.0; // reactive term. Unused here, as cell agents consume species in a different function
     //Calculate distances to neighbours
     float dx = ((n_left_dist > 0.0) & (n_right_dist > 0.0)) ? (n_left_dist + n_right_dist) / 2.0 : fmaxf(n_left_dist,n_right_dist);
@@ -264,9 +263,11 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MessageArray3D, flamegpu:
       float Fy = DIFFUSION_COEFF * TIME_STEP / powf(dy, 2.0);
       float Fz = DIFFUSION_COEFF * TIME_STEP / powf(dz, 2.0);
       agent_C_sp_prev[i] = C_sp[i];
+      printf("agent id: %d, agent_C_sp_prev: %d, species: %d \n", id, agent_C_sp_prev[i], i+1);
       C_sp[i] = agent_C_sp_prev[i] + Fx * (n_left_C_sp[i] - (2 * agent_C_sp_prev[i]) + n_right_C_sp[i]) + Fy * (n_front_C_sp[i] - (2 * agent_C_sp_prev[i]) + n_back_C_sp[i]) + Fz * (n_up_C_sp[i] - (2 * agent_C_sp_prev[i]) + n_down_C_sp[i]) + R * TIME_STEP;
       FLAMEGPU->setVariable<float, N_SPECIES>("C_sp", i, C_sp[i]);
-      if ((id > 8) && (DEBUG_PRINTING == 1)){  
+      printf("agent id: %d, agent_C_sp AFTER: %d, species %d \n", id, C_sp[i], i+1);
+      if (DEBUG_PRINTING == 1){  
         printf("DIFFUSION for agent %d, species %d, [dx,dy,dz] = [%2.6f , %2.6f, %2.6f], [Fx,Fy,Fz] = [%2.6f , %2.6f, %2.6f] \n", id, i+1, dx, dy, dz, Fx, Fy, Fz);
         printf("agent %d: MULTI left conc = %2.6f, right conc = %2.6f \n", id, n_left_C_sp[i], n_right_C_sp[i]);
         printf("agent %d: MULTI front conc = %2.6f, back conc = %2.6f \n", id, n_front_C_sp[i], n_back_C_sp[i]);

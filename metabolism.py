@@ -12,7 +12,7 @@ import pathlib, time, math, sys
 from dataclasses import make_dataclass
 import pandas as pd
 import numpy as np
-from random import random
+import random
 
 start_time = time.time()
 
@@ -23,12 +23,12 @@ start_time = time.time()
 ENSEMBLE = False
 ENSEMBLE_RUNS = 0
 VISUALISATION = True  # Change to false if pyflamegpu has not been built with visualisation support
-DEBUG_PRINTING = False
+DEBUG_PRINTING = True
 PAUSE_EVERY_STEP = False  # If True, the visualization stops every step until P is pressed
 SAVE_PICKLE = True  # If True, dumps agent and boudary force data into a pickle file for post-processing
 SHOW_PLOTS = False  # Show plots at the end of the simulation
 SAVE_DATA_TO_FILE = True  # If true, agent data is exported to .vtk file every SAVE_EVERY_N_STEPS steps
-SAVE_EVERY_N_STEPS = 20  # Affects both the .vtk files and the Dataframes storing boundary data
+SAVE_EVERY_N_STEPS = 5  # Affects both the .vtk files and the Dataframes storing boundary data
 
 CURR_PATH = pathlib.Path().absolute()
 RES_PATH = CURR_PATH / 'result_files'
@@ -39,12 +39,12 @@ print("Executing in ", CURR_PATH)
 # Minimum number of agents per direction (x,y,z). 
 # If domain is not cubical, N is asigned to the shorter dimension and more agents are added to the longer ones
 # +--------------------------------------------------------------------+
-N = 5
+N = 3
 
 # Time simulation parameters
 # +--------------------------------------------------------------------+
 TIME_STEP = 0.025  # time. WARNING: diffusion and cell migration events might need different scales
-STEPS = 5000
+STEPS = 2
 
 # Boundary interactions and mechanical parameters
 # +--------------------------------------------------------------------+
@@ -136,18 +136,18 @@ if OSCILLATORY_SHEAR_ASSAY:
 INCLUDE_DIFFUSION = True
 N_SPECIES = 2  # number of diffusing species.WARNING: make sure that the value coincides with the one declared in TODO
 DIFFUSION_COEFF_MULTI = [0.02, 0.02]  # diffusion coefficient in [units^2/s] per specie
-BOUNDARY_CONC_INIT_MULTI = [[-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+BOUNDARY_CONC_INIT_MULTI = [[1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
                             # initial concentration at each surface (+X,-X,+Y,-Y,+Z,-Z) [units^2/s]. -1.0 means no condition assigned. All agents are assigned 0 by default.
                             [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0]]  # add as many lines as different species
 
-BOUNDARY_CONC_FIXED_MULTI = [[-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+BOUNDARY_CONC_FIXED_MULTI = [[1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
                              # concentration boundary conditions at each surface. WARNING: -1.0 means initial condition prevails. Don't use 0.0 as initial condition if that value is not fixed. Use -1.0 instead
                              [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0]]  # add as many lines as different species
 
 INIT_ECM_CONCENTRATION_VALS = [0.0, 0.0]  # initial concentration of each species on the ECM agents
 INIT_CELL_CONCENTRATION_VALS = [0.0, 0.0]  # initial concentration of each species on the CELL agents
 INIT_CELL_CONSUMPTION_RATES = [0.0, 0.0]  # consumption rate of each species by the CELL agents 
-INIT_CELL_PRODUCTION_RATES = [0.0, 0.0]  # production rate of each species by the CELL agents 
+INIT_CELL_PRODUCTION_RATES = [0.1, 0.01]  # production rate of each species by the CELL agents 
 
 # Cell agent related paramenters
 # +--------------------------------------------------------------------+
@@ -291,6 +291,11 @@ env.newPropertyUInt("CURRENT_ID", 0)
 env.newPropertyUInt("STEPS", STEPS)
 # Time increment 
 env.newPropertyFloat("TIME_STEP", TIME_STEP)
+# Number of agents in the ECM grid per direction
+env.newPropertyArrayUInt("ECM_AGENTS_PER_DIR", ECM_AGENTS_PER_DIR)
+# Diffusion coefficient
+env.newPropertyUInt("INCLUDE_DIFFUSION", INCLUDE_DIFFUSION)
+env.newPropertyArrayFloat("DIFFUSION_COEFF_MULTI", DIFFUSION_COEFF_MULTI)
 
 # ------------------------------------------------------
 # BOUNDARY BEHAVIOUR 
@@ -369,12 +374,21 @@ env.newPropertyFloat("EPSILON", EPSILON)
 """
   LOCATION MESSAGES
 """
+bcorner_location_message = model.newMessageSpatial3D("bcorner_location_message")
+# Set the range and bounds.
+bcorner_location_message.setRadius(MAX_EXPECTED_BOUNDARY_POS - MIN_EXPECTED_BOUNDARY_POS)  # corners are not actually interacting with anything
+bcorner_location_message.setMin(MIN_EXPECTED_BOUNDARY_POS, MIN_EXPECTED_BOUNDARY_POS, MIN_EXPECTED_BOUNDARY_POS)
+bcorner_location_message.setMax(MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS)
+# A message to hold the location of an agent. WARNING: spatial3D messages already define x,y,z variables internally.
+bcorner_location_message.newVariableInt("id")
+
 ECM_grid_location_message = model.newMessageArray3D("ECM_grid_location_message")
 ECM_grid_location_message.setDimensions(ECM_AGENTS_PER_DIR[0], ECM_AGENTS_PER_DIR[1], ECM_AGENTS_PER_DIR[2])
 ECM_grid_location_message.newVariableInt("id")
 ECM_grid_location_message.newVariableFloat("x")
 ECM_grid_location_message.newVariableFloat("y")
 ECM_grid_location_message.newVariableFloat("z")
+ECM_grid_location_message.newVariableInt("grid_lin_id")
 ECM_grid_location_message.newVariableUInt8("grid_i")
 ECM_grid_location_message.newVariableUInt8("grid_j")
 ECM_grid_location_message.newVariableUInt8("grid_k")
@@ -469,19 +483,18 @@ if INCLUDE_CELLS:
     CELL_agent.newVariableFloat("orx")
     CELL_agent.newVariableFloat("ory")
     CELL_agent.newVariableFloat("orz")
+    CELL_agent.newVariableFloat("k_elast")
+    CELL_agent.newVariableFloat("d_dumping")
     CELL_agent.newVariableFloat("alignment", 0.0)
     CELL_agent.newVariableArrayFloat("k_consumption", N_SPECIES) 
-    # TODO: default array values must be explicitly defined when initializing agent populations
     CELL_agent.newVariableArrayFloat("k_production", N_SPECIES) 
-    # TODO: default array values must be explicitly defined when initializing agent populations
     CELL_agent.newVariableArrayFloat("C_sp", N_SPECIES) 
-    # TODO: default array values must be explicitly defined when initializing agent populations
     CELL_agent.newVariableFloat("radius", CELL_RADIUS)
     CELL_agent.newVariableInt("cycle_phase", 1) # [1:G1] [2:S] [3:G2] [4:M]
     CELL_agent.newVariableFloat("clock", 0.0) # internal clock of the cell to switch phases
     CELL_agent.newVariableInt("completed_cycles", 0)
-    CELL_agent.newRTCFunctionFile("cell_output_location_data", cell_output_location_data_file).setMessageOutput("CELL_spatial_location_message ")
-    CELL_agent.newRTCFunctionFile("cell_ecm_interaction_metabolism", cell_ecm_interaction_metabolism_file).setMessageInput("ECM_grid_location_message ")
+    CELL_agent.newRTCFunctionFile("cell_output_location_data", cell_output_location_data_file).setMessageOutput("CELL_spatial_location_message")
+    CELL_agent.newRTCFunctionFile("cell_ecm_interaction_metabolism", cell_ecm_interaction_metabolism_file).setMessageInput("ECM_grid_location_message")
     CELL_agent.newRTCFunctionFile("cell_move", cell_move_file)
 
 
@@ -494,8 +507,7 @@ bcorner_agent.newVariableFloat("x")
 bcorner_agent.newVariableFloat("y")
 bcorner_agent.newVariableFloat("z")
 
-bcorner_agent.newRTCFunctionFile("bcorner_output_location_data", bcorner_output_location_data_file).setMessageOutput(
-    "bcorner_location_message")
+bcorner_agent.newRTCFunctionFile("bcorner_output_location_data", bcorner_output_location_data_file).setMessageOutput("bcorner_location_message")
 bcorner_agent.newRTCFunctionFile("bcorner_move", bcorner_move_file)
 
 
@@ -1198,7 +1210,6 @@ layer_count = 0
 layer_count += 1
 model.newLayer("L1_Agent_Locations").addAgentFunction("CELL", "cell_output_location_data")
 model.Layer("L1_Agent_Locations").addAgentFunction("ECM", "ecm_output_grid_location_data")
-model.Layer("L1_Agent_Locations").addAgentFunction("ECM", "ecm_output_spatial_location_data")
 # L2_Boundary_Interactions
 layer_count += 1
 model.newLayer("L2_Boundary_Interactions").addAgentFunction("ECM", "ecm_boundary_concentration_conditions")
@@ -1292,6 +1303,8 @@ else:
 """
   Create Visualisation
 """
+print(pyflamegpu.VISUALISATION, VISUALISATION, ENSEMBLE)
+
 if pyflamegpu.VISUALISATION and VISUALISATION and not ENSEMBLE:
     vis = simulation.getVisualisation()
     # Configure vis

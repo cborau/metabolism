@@ -108,15 +108,14 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, flamegpu::MessageNone, flamegpu::MessageNone) 
   float agent_fx = FLAMEGPU->getVariable<float>("fx");
   float agent_fy = FLAMEGPU->getVariable<float>("fy");
   float agent_fz = FLAMEGPU->getVariable<float>("fz");
-    
+  /*  
   if (DEBUG_PRINTING == 1 && (id == 9 || id == 10 || id == 14 || id == 25 || id == 26 || id == 29 || id == 30)){
     printf("ECM move ID: %d clamps before -> (%d, %d, %d, %d, %d, %d)\n", id, clamped_bx_pos, clamped_bx_neg, clamped_by_pos, clamped_by_neg, clamped_bz_pos, clamped_bz_neg);
     printf("ECM move ID: %d pos -> (%2.6f, %2.6f, %2.6f)\n", id, agent_x, agent_y, agent_z);
     printf("ECM move ID: %d vel -> (%2.6f, %2.6f, %2.6f)\n", id, agent_vx, agent_vy, agent_vz);
     printf("ECM move ID: %d f -> (%2.6f, %2.6f, %2.6f)\n", id, agent_fx, agent_fy, agent_fz);
-    printf("ECM move ID: %d bf -> (%2.6f, %2.6f, %2.6f)\n", id, agent_boundary_fx, agent_boundary_fy, agent_boundary_fz);
-    printf("ECM move ID: %d f after -> (%2.6f, %2.6f, %2.6f)\n", id, agent_fx, agent_fy, agent_fz);
   }
+  */
 
   //Get the new position and velocity: 
   // SUM(F) = ETA * v;
