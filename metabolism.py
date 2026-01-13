@@ -44,7 +44,7 @@ N = 10
 # Time simulation parameters
 # +--------------------------------------------------------------------+
 TIME_STEP = 0.025  # time. WARNING: diffusion and cell migration events might need different scales
-STEPS = 300
+STEPS = 30
 
 # Boundary interactions and mechanical parameters
 # +--------------------------------------------------------------------+
@@ -141,18 +141,18 @@ if OSCILLATORY_SHEAR_ASSAY:
 INCLUDE_DIFFUSION = True
 N_SPECIES = 2  # number of diffusing species.WARNING: make sure that the value coincides with the one declared in TODO
 DIFFUSION_COEFF_MULTI = [0.05, 0.05]  # diffusion coefficient in [units^2/s] per specie
-BOUNDARY_CONC_INIT_MULTI = [[1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+BOUNDARY_CONC_INIT_MULTI = [[-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
                             # initial concentration at each surface (+X,-X,+Y,-Y,+Z,-Z) [units^2/s]. -1.0 means no condition assigned. All agents are assigned 0 by default.
                             [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0]]  # add as many lines as different species
 
-BOUNDARY_CONC_FIXED_MULTI = [[1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+BOUNDARY_CONC_FIXED_MULTI = [[-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
                              # concentration boundary conditions at each surface. WARNING: -1.0 means initial condition prevails. Don't use 0.0 as initial condition if that value is not fixed. Use -1.0 instead
                              [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0]]  # add as many lines as different species
 
 INIT_ECM_CONCENTRATION_VALS = [0.0, 0.0]  # initial concentration of each species on the ECM agents
 INIT_CELL_CONCENTRATION_VALS = [0.0, 0.0]  # initial concentration of each species on the CELL agents
 INIT_CELL_CONSUMPTION_RATES = [0.0, 0.0]  # consumption rate of each species by the CELL agents 
-INIT_CELL_PRODUCTION_RATES = [0.1, 0.01]  # production rate of each species by the CELL agents 
+INIT_CELL_PRODUCTION_RATES = [0.1, 0.05]  # production rate of each species by the CELL agents 
 
 # Cell agent related paramenters
 # +--------------------------------------------------------------------+

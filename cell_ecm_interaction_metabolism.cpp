@@ -50,6 +50,8 @@ FLAMEGPU_AGENT_FUNCTION(cell_ecm_interaction_metabolism, flamegpu::MessageArray3
   int message_grid_lin_id = 0;
   float message_C_sp[N_SPECIES] = {};
 
+  printf("Cell agent %d at pos (%2.6f , %2.6f, %2.6f) reading ECM agent at grid (%d , %d, %d) \n", agent_id, agent_x, agent_y,  agent_z, agent_grid_i, agent_grid_j, agent_grid_k);
+
   // Reads the closest ECM agent grid_lin_id to read the corresponding C_SP_MACRO value
   // Then computes metabolism, updating both the cell calling agent and C_SP_MACRO values accordingly
   // The closest ECM agent
@@ -57,12 +59,22 @@ FLAMEGPU_AGENT_FUNCTION(cell_ecm_interaction_metabolism, flamegpu::MessageArray3
   message_id = message.getVariable<int>("id");
   message_grid_lin_id = message.getVariable<int>("grid_lin_id");
   for (int i = 0; i < N_SPECIES; i++) {
-    message_C_sp[i] = (float)C_SP_MACRO[i][message_grid_lin_id]; // read concentration of species from the MACRO variable
+    //message_C_sp[i] = (float)C_SP_MACRO[i][message_grid_lin_id]; // read concentration of species from the MACRO variable
+    message_C_sp[i] = message.getVariable<float, N_SPECIES>("C_sp", i);
+    printf("  -> ECM agent id %d at grid_lin_id %d has C_sp[%d] = %.6f \n", message_id, message_grid_lin_id, i+1, message_C_sp[i]);
     // compute metabolism
     float delta_C = (-k_consumption[i] + k_production[i]) * TIME_STEP; // TODO: CHECK EQUATION
     // Update ECM MACRO variable -> THIS RAISES AN ERROR DUE TO RACING CONDITIONS
     //C_SP_MACRO[i][message_grid_lin_id] += delta_C;
+    printf("    -> metabolism for species %d: prev_C = %.6f, delta_C = %.6f \n", i+1, C_sp[i], delta_C);
     C_sp[i] += delta_C; // update cell species concentration
+    if (message_C_sp[i] + delta_C < 0.0f) {
+      C_SP_MACRO[i][message_grid_lin_id].exchange(0.0f);
+    } else 
+    {
+      C_SP_MACRO[i][message_grid_lin_id].exchange(message_C_sp[i] + delta_C);
+    }
+    
     FLAMEGPU->setVariable<float, N_SPECIES>("C_sp", i, C_sp[i]);
   }
 
