@@ -61,12 +61,12 @@ FLAMEGPU_AGENT_FUNCTION(cell_ecm_interaction_metabolism, flamegpu::MessageArray3
   for (int i = 0; i < N_SPECIES; i++) {
     //message_C_sp[i] = (float)C_SP_MACRO[i][message_grid_lin_id]; // read concentration of species from the MACRO variable
     message_C_sp[i] = message.getVariable<float, N_SPECIES>("C_sp", i);
-    printf("  -> ECM agent id %d at grid_lin_id %d has C_sp[%d] = %.6f \n", message_id, message_grid_lin_id, i+1, message_C_sp[i]);
+    //printf("  -> ECM agent id %d at grid_lin_id %d has C_sp[%d] = %.6f \n", message_id, message_grid_lin_id, i+1, message_C_sp[i]);
     // compute metabolism
     float delta_C = (-k_consumption[i] + k_production[i]) * TIME_STEP; // TODO: CHECK EQUATION
     // Update ECM MACRO variable -> THIS RAISES AN ERROR DUE TO RACING CONDITIONS
     //C_SP_MACRO[i][message_grid_lin_id] += delta_C;
-    printf("    -> metabolism for species %d: prev_C = %.6f, delta_C = %.6f \n", i+1, C_sp[i], delta_C);
+    //printf("    -> metabolism for species %d: prev_C = %.6f, delta_C = %.6f \n", i+1, C_sp[i], delta_C);
     C_sp[i] += delta_C; // update cell species concentration
     if (message_C_sp[i] + delta_C < 0.0f) {
       C_SP_MACRO[i][message_grid_lin_id].exchange(0.0f);

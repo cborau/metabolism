@@ -243,7 +243,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MessageArray3D, flamegpu:
 
       agent_fx += -1 * total_f * cos_x; // minus comes from the direction definition (agent-message)
       agent_fy += -1 * total_f * cos_y;
-      agent_fz += -1 * total_f * cos_z;		
+      agent_fz += -1 * total_f * cos_z;	
       
       //if (DEBUG_PRINTING == 1 && (id == 9 || id == 10 || id == 13 || id == 22)) {
       /*if (DEBUG_PRINTING == 1) {
@@ -259,6 +259,10 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MessageArray3D, flamegpu:
   FLAMEGPU->setVariable<float>("fx", agent_fx);
   FLAMEGPU->setVariable<float>("fy", agent_fy);
   FLAMEGPU->setVariable<float>("fz", agent_fz);
+  if (id == 554) {
+    printf("ECM agent %d at grid_lin_id %d computed forces: fx %2.6f, fy %2.6f, fz %2.6f \n", id, grid_lin_id, agent_fx, agent_fy, agent_fz);
+  }
+
   //Apply diffusion equation
   if (INCLUDE_DIFFUSION == 1){
     float R = 0.0; // reactive term. Unused here, as cell agents consume species in a different function

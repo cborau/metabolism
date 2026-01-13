@@ -44,13 +44,13 @@ N = 10
 # Time simulation parameters
 # +--------------------------------------------------------------------+
 TIME_STEP = 0.025  # time. WARNING: diffusion and cell migration events might need different scales
-STEPS = 30
+STEPS = 300
 
 # Boundary interactions and mechanical parameters
 # +--------------------------------------------------------------------+
-ECM_K_ELAST = 2.0  # [N/units/kg]
-ECM_D_DUMPING = 0.4  # [N*s/units/kg]
-ECM_ETA = 1.0  # [1/time]
+ECM_K_ELAST = 0.2  # [N/units/kg]
+ECM_D_DUMPING = 0.04  # [N*s/units/kg]
+ECM_ETA = 1  # [1/time]
 
 BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]  # +X,-X,+Y,-Y,+Z,-Z
 #BOUNDARY_COORDS = [1000.0, -1000.0, 650.0, -650.0, 150.0, -150.0] # microdevice dimensions in um
@@ -68,7 +68,6 @@ BOUNDARY_DUMPING = [BOUNDARY_DUMPING_VALUE * x for x in RELATIVE_BOUNDARY_STIFFN
 #CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]  # +X,-X,+Y,-Y,+Z,-Z [bool] - shear assay
 CLAMP_AGENT_TOUCHING_BOUNDARY = [1, 1, 1, 1, 1, 1]  # +X,-X,+Y,-Y,+Z,-Z [bool]
 ALLOW_AGENT_SLIDING = [0, 0, 0, 0, 0, 0]  # +X,-X,+Y,-Y,+Z,-Z [bool]
-
 
 
 if any(rate != 0.0 for rate in BOUNDARY_DISP_RATES_PARALLEL) or any(rate != 0.0 for rate in BOUNDARY_DISP_RATES):
@@ -845,7 +844,128 @@ model.addInitFunction(initialMacroProperties)
 """
 # pyflamegpu requires step functions to be a class which extends the StepFunction base class.
 # This class must extend the handle function
-# TODO: remove unnecessary parts
+class MoveBoundaries(pyflamegpu.HostFunction):
+    """
+     pyflamegpu requires step functions to be a class which extends the StepFunction base class.
+     This class must extend the handle function
+     """
+
+    # Define Python class 'constructor'
+    def __init__(self):
+        super().__init__()
+        self.apply_parallel_disp = list()
+        for d in range(12):
+            if abs(BOUNDARY_DISP_RATES_PARALLEL[d]) > 0.0:
+                self.apply_parallel_disp.append(True)
+            else:
+                self.apply_parallel_disp.append(False)
+
+    # Override C++ method: virtual void run(FLAMEGPU_HOST_API*)
+    def run(self, FLAMEGPU):
+        stepCounter = FLAMEGPU.getStepCounter() + 1
+        global BOUNDARY_DISP_RATES, ALLOW_BOUNDARY_ELASTIC_MOVEMENT, BOUNDARY_STIFFNESS, BOUNDARY_DUMPING, BPOS_OVER_TIME
+        global CLAMP_AGENT_TOUCHING_BOUNDARY, OSCILLATORY_SHEAR_ASSAY, OSCILLATORY_AMPLITUDE, OSCILLATORY_W, OSCILLATORY_STRAIN_OVER_TIME
+        global DEBUG_PRINTING, PAUSE_EVERY_STEP, TIME_STEP
+
+        boundaries_moved = False
+        if PAUSE_EVERY_STEP:
+            input()  # pause everystep
+    
+        coord_boundary = list(FLAMEGPU.environment.getPropertyArrayFloat("COORDS_BOUNDARIES"))
+        if OSCILLATORY_SHEAR_ASSAY:
+            if stepCounter % SAVE_EVERY_N_STEPS == 0 or stepCounter == 1:
+                new_val = pd.DataFrame([OSOT(OSCILLATORY_AMPLITUDE * math.sin(OSCILLATORY_W * stepCounter))])
+                # OSCILLATORY_STRAIN_OVER_TIME = OSCILLATORY_STRAIN_OVER_TIME.append(new_val, ignore_index=True) #TODO: FIX?
+                OSCILLATORY_STRAIN_OVER_TIME = pd.concat([OSCILLATORY_STRAIN_OVER_TIME, new_val], ignore_index=True)
+            for d in range(12):
+                if self.apply_parallel_disp[d]:
+                    BOUNDARY_DISP_RATES_PARALLEL[d] = OSCILLATORY_AMPLITUDE * math.cos(
+                        OSCILLATORY_W * stepCounter) * OSCILLATORY_W / TIME_STEP  # cos(w*t)*t is used because the slope of the sin(w*t) function is needed
+
+            FLAMEGPU.environment.setPropertyArrayFloat("DISP_RATES_BOUNDARIES_PARALLEL", BOUNDARY_DISP_RATES_PARALLEL)
+
+        if any(catb < 1 for catb in CLAMP_AGENT_TOUCHING_BOUNDARY) or any(
+                abem > 0 for abem in ALLOW_BOUNDARY_ELASTIC_MOVEMENT):
+            boundaries_moved = True
+            agent = FLAMEGPU.agent("ECM")
+            minmax_positions = list()
+            minmax_positions.append(agent.maxFloat("x"))
+            minmax_positions.append(agent.minFloat("x"))
+            minmax_positions.append(agent.maxFloat("y"))
+            minmax_positions.append(agent.minFloat("y"))
+            minmax_positions.append(agent.maxFloat("z"))
+            minmax_positions.append(agent.minFloat("z"))
+            boundary_equil_distances = list()
+            boundary_equil_distances.append(ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
+            boundary_equil_distances.append(-ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
+            boundary_equil_distances.append(ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
+            boundary_equil_distances.append(-ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
+            boundary_equil_distances.append(ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
+            boundary_equil_distances.append(-ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
+            for i in range(6):
+                if CLAMP_AGENT_TOUCHING_BOUNDARY[i] < 1:
+                    if ALLOW_BOUNDARY_ELASTIC_MOVEMENT[i] > 0:
+                        coord_boundary[i] = minmax_positions[i] + boundary_equil_distances[i]
+                    else:
+                        coord_boundary[i] = minmax_positions[i]
+
+            bcs = [coord_boundary[0], coord_boundary[1], coord_boundary[2], coord_boundary[3], coord_boundary[4],
+                   coord_boundary[5]]  # +X,-X,+Y,-Y,+Z,-Z
+            FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs)
+
+            if stepCounter % SAVE_EVERY_N_STEPS == 0 or stepCounter == 1:
+                print("====== MOVING FREE BOUNDARIES  ======")
+                print("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", coord_boundary)
+                print("=====================================")
+
+        if any(dr > 0.0 or dr < 0.0 for dr in BOUNDARY_DISP_RATES):
+            boundaries_moved = True
+            for i in range(6):
+                coord_boundary[i] += (BOUNDARY_DISP_RATES[i] * TIME_STEP)
+
+            bcs = [coord_boundary[0], coord_boundary[1], coord_boundary[2], coord_boundary[3], coord_boundary[4],
+                   coord_boundary[5]]  # +X,-X,+Y,-Y,+Z,-Z
+            FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs)
+            if stepCounter % SAVE_EVERY_N_STEPS == 0 or stepCounter == 1:
+                print("====== MOVING BOUNDARIES DUE TO CONDITIONS ======")
+                print("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", coord_boundary)
+                print("=================================================")
+
+        # if any(abem > 0 for abem in ALLOW_BOUNDARY_ELASTIC_MOVEMENT):
+        #   boundaries_moved = True
+        #   print ("====== MOVING BOUNDARIES DUE TO FORCES ======")
+        #   agent = FLAMEGPU.agent("ECM")
+        #   sum_bx_pos = agent.sumFloat("f_bx_pos")
+        #   sum_bx_neg = agent.sumFloat("f_bx_neg")
+        #   sum_by_pos = agent.sumFloat("f_by_pos")
+        #   sum_by_neg = agent.sumFloat("f_by_neg")
+        #   sum_bz_pos = agent.sumFloat("f_bz_pos")
+        #   sum_bz_neg = agent.sumFloat("f_bz_neg")
+        #   print ("Total forces [+X,-X,+Y,-Y,+Z,-Z]: ", sum_bx_pos, sum_bx_neg, sum_by_pos, sum_by_neg, sum_bz_pos, sum_bz_neg)
+        #   boundary_forces = [sum_bx_pos, sum_bx_neg, sum_by_pos, sum_by_neg, sum_bz_pos, sum_bz_neg]
+        #   for i in range(6):
+        #       if BOUNDARY_DISP_RATES[i] < EPSILON and BOUNDARY_DISP_RATES[i] > -EPSILON and ALLOW_BOUNDARY_ELASTIC_MOVEMENT[i]:
+        #           #u = boundary_forces[i] / BOUNDARY_STIFFNESS[i]
+        #           u = (boundary_forces[i] * TIME_STEP)/ (BOUNDARY_STIFFNESS[i] * TIME_STEP + BOUNDARY_DUMPING[i])
+        #           print ("Displacement for boundary {} = {}".format(i,u))
+        #           coord_boundary[i] += u
+
+        #   bcs = [coord_boundary[0], coord_boundary[1], coord_boundary[2], coord_boundary[3], coord_boundary[4], coord_boundary[5]]  #+X,-X,+Y,-Y,+Z,-Z
+        #   FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs)
+        #   print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", coord_boundary)
+        #   print ("=================================================")
+
+        if boundaries_moved:
+            if stepCounter % SAVE_EVERY_N_STEPS == 0 or stepCounter == 1:
+                new_pos = pd.DataFrame([BPOS(coord_boundary[0], coord_boundary[1], coord_boundary[2],
+                                             coord_boundary[3], coord_boundary[4], coord_boundary[5])])
+                # BPOS_OVER_TIME = BPOS_OVER_TIME.append(new_pos, ignore_index=True)
+                BPOS_OVER_TIME = pd.concat([BPOS_OVER_TIME, new_pos], ignore_index=True)
+
+        # print ("End of step: ", stepCounter)
+
+
+
 class SaveDataToFile(pyflamegpu.HostFunction):
     def __init__(self):
         global ECM_AGENTS_PER_DIR
@@ -1201,9 +1321,13 @@ if INCLUDE_CELLS:
         uac = UpdateAgentCount()
         model.addStepFunction(uac)
 
+if MOVING_BOUNDARIES:
+    mb = MoveBoundaries()
+    model.addStepFunction(mb)
+
 sdf = SaveDataToFile()
 model.addStepFunction(sdf)
-#TODO: add moving boundaries
+
 
 """
   END OF STEP FUNCTIONS
