@@ -1461,12 +1461,12 @@ if pyflamegpu.VISUALISATION and VISUALISATION and not ENSEMBLE:
     ECM_vis_agent.setModelScale(0.025 * domain_width) # values <<1 (e.g. 0.03) work fine
     ECM_vis_agent.setColor(pyflamegpu.Color("#ffaa00"))
 
-    BCORNER_vis_agent = visualisation.addAgent("BCORNER")
+    BCORNER_vis_agent = vis.addAgent("BCORNER")
     BCORNER_vis_agent.setModel(pyflamegpu.CUBE)
     BCORNER_vis_agent.setModelScale(0.025 * domain_width)
     BCORNER_vis_agent.setColor(pyflamegpu.RED)
 
-    coord_boundary = list(env.getPropertyArrayFloat("BOUNDARY_COORDS"))
+    coord_boundary = list(env.getPropertyArrayFloat("COORDS_BOUNDARIES"))
     pen = vis.newLineSketch(1, 1, 1, 0.8)
     pen.addVertex(coord_boundary[0], coord_boundary[2], coord_boundary[4])
     pen.addVertex(coord_boundary[0], coord_boundary[2], coord_boundary[5])
