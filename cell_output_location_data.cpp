@@ -14,16 +14,26 @@ FLAMEGPU_AGENT_FUNCTION(cell_output_location_data, flamegpu::MessageNone, flameg
     float ncol = FLAMEGPU->getVariable<float, N_SPECIES>("k_consumption", i);
     FLAMEGPU->message_out.setVariable<float, N_SPECIES>("k_consumption", i, ncol);
   }
-  // Agent array variables
+  
   for (int i = 0; i < N_SPECIES; i++) {
     float ncol = FLAMEGPU->getVariable<float, N_SPECIES>("k_production", i);
     FLAMEGPU->message_out.setVariable<float, N_SPECIES>("k_production", i, ncol);
   }
-  // Agent array variables
+
+  for (int i = 0; i < N_SPECIES; i++) {
+    float ncol = FLAMEGPU->getVariable<float, N_SPECIES>("k_reaction", i);
+    FLAMEGPU->message_out.setVariable<float, N_SPECIES>("k_reaction", i, ncol);
+  }
+
   for (int i = 0; i < N_SPECIES; i++) {
     float ncol = FLAMEGPU->getVariable<float, N_SPECIES>("C_sp", i);
     FLAMEGPU->message_out.setVariable<float, N_SPECIES>("C_sp", i, ncol);
   }  
+
+  for (int i = 0; i < N_SPECIES; i++) {
+    float ncol = FLAMEGPU->getVariable<float, N_SPECIES>("C_sp_sat", i);
+    FLAMEGPU->message_out.setVariable<float, N_SPECIES>("C_sp_sat", i, ncol);
+  } 
 
   return flamegpu::ALIVE;
 }

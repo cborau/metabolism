@@ -108,8 +108,8 @@ ECM_ECM_EQUILIBRIUM_DISTANCE = (BOUNDARY_COORDS[0] - BOUNDARY_COORDS[1]) / (ECM_
 print("ECM_ECM_EQUILIBRIUM_DISTANCE [units]: ", ECM_ECM_EQUILIBRIUM_DISTANCE)
 ECM_BOUNDARY_INTERACTION_RADIUS = 0.05
 ECM_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.0
-
-
+ECM_VOXEL_VOLUME = (1.0 / (ECM_AGENTS_PER_DIR[0] - 1)) * (1.0 / (ECM_AGENTS_PER_DIR[1] - 1)) * (1.0 / (ECM_AGENTS_PER_DIR[2] - 1))
+print("ECM_VOXEL_VOLUME [units^3]: ", ECM_VOXEL_VOLUME)
 MAX_SEARCH_RADIUS_VASCULARIZATION = ECM_ECM_EQUILIBRIUM_DISTANCE  # this strongly affects the number of bins and therefore the memory allocated for simulations (more bins -> more memory -> faster (in theory))
 MAX_SEARCH_RADIUS_CELL_ECM_INTERACTION = ECM_ECM_EQUILIBRIUM_DISTANCE # this radius is used to find ECM agents
 print("MAX_SEARCH_RADIUS for CELLS [units]: ", MAX_SEARCH_RADIUS_CELL_ECM_INTERACTION)
@@ -150,9 +150,10 @@ BOUNDARY_CONC_FIXED_MULTI = [[-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
 
 INIT_ECM_CONCENTRATION_VALS = [0.0, 0.0]  # initial concentration of each species on the ECM agents
 INIT_CELL_CONCENTRATION_VALS = [0.0, 0.0]  # initial concentration of each species on the CELL agents
+INIT_CELL_SAT_CONCENTRATION_VALS = [1.0, 1.0]  # initial saturation concentration of each species on the CELL agents
 INIT_CELL_CONSUMPTION_RATES = [0.0, 0.0]  # consumption rate of each species by the CELL agents 
 INIT_CELL_PRODUCTION_RATES = [0.1, 0.05]  # production rate of each species by the CELL agents 
-
+INIT_CELL_REACTION_RATES = [0.1, 0.05]  # metabolic reaction rates of each species by the CELL agents 
 # Cell agent related paramenters
 # +--------------------------------------------------------------------+
 INCLUDE_CELLS = True
@@ -300,6 +301,7 @@ env.newPropertyArrayUInt("ECM_AGENTS_PER_DIR", ECM_AGENTS_PER_DIR)
 # Diffusion coefficient
 env.newPropertyUInt("INCLUDE_DIFFUSION", INCLUDE_DIFFUSION)
 env.newPropertyArrayFloat("DIFFUSION_COEFF_MULTI", DIFFUSION_COEFF_MULTI)
+env.newPropertyFloat("ECM_VOXEL_VOLUME", ECM_VOXEL_VOLUME)
 
 # ------------------------------------------------------
 # BOUNDARY BEHAVIOUR 
@@ -429,7 +431,9 @@ CELL_spatial_location_message.newVariableFloat("orz")
 CELL_spatial_location_message.newVariableFloat("alignment")
 CELL_spatial_location_message.newVariableArrayFloat("k_consumption", N_SPECIES) 
 CELL_spatial_location_message.newVariableArrayFloat("k_production", N_SPECIES) 
+CELL_spatial_location_message.newVariableArrayFloat("k_reaction", N_SPECIES) 
 CELL_spatial_location_message.newVariableArrayFloat("C_sp", N_SPECIES) 
+CELL_spatial_location_message.newVariableArrayFloat("C_sp_sat", N_SPECIES) 
 CELL_spatial_location_message.newVariableFloat("radius")
 CELL_spatial_location_message.newVariableFloat("cycle_phase")
 CELL_spatial_location_message.newVariableFloat("clock")
@@ -494,7 +498,9 @@ if INCLUDE_CELLS:
     CELL_agent.newVariableFloat("alignment", 0.0)
     CELL_agent.newVariableArrayFloat("k_consumption", N_SPECIES) 
     CELL_agent.newVariableArrayFloat("k_production", N_SPECIES) 
+    CELL_agent.newVariableArrayFloat("k_reaction", N_SPECIES) 
     CELL_agent.newVariableArrayFloat("C_sp", N_SPECIES) 
+    CELL_agent.newVariableArrayFloat("C_sp_sat", N_SPECIES) 
     CELL_agent.newVariableFloat("radius", CELL_RADIUS)
     CELL_agent.newVariableInt("cycle_phase", 1) # [1:G1] [2:S] [3:G2] [4:M]
     CELL_agent.newVariableFloat("clock", 0.0) # internal clock of the cell to switch phases
@@ -636,7 +642,7 @@ def getRandomCoordsAroundPoint(n, px, py, pz, radius):
 # This class is used to ensure that corner agents are assigned the first 8 ids
 class initAgentPopulations(pyflamegpu.HostFunction):
     def run(self, FLAMEGPU):
-        global INIT_ECM_CONCENTRATION_VALS, INIT_CELL_CONCENTRATION_VALS, INIT_CELL_CONSUMPTION_RATES, INIT_CELL_PRODUCTION_RATES, N_SPECIES, INCLUDE_DIFFUSION, INCLUDE_CELLS, N_CELLS
+        global INIT_ECM_CONCENTRATION_VALS, INIT_CELL_CONCENTRATION_VALS, INIT_CELL_SAT_CONCENTRATION_VALS, INIT_CELL_CONSUMPTION_RATES, INIT_CELL_PRODUCTION_RATES,INIT_CELL_REACTION_RATES, N_SPECIES, INCLUDE_DIFFUSION, INCLUDE_CELLS, N_CELLS
         # BOUNDARY CORNERS
         current_id = FLAMEGPU.environment.getPropertyUInt("CURRENT_ID")
         coord_boundary = FLAMEGPU.environment.getPropertyArrayFloat("COORDS_BOUNDARIES")
@@ -780,8 +786,10 @@ class initAgentPopulations(pyflamegpu.HostFunction):
                 instance.setVariableFloat("k_elast", k_elast)
                 instance.setVariableFloat("d_dumping", d_dumping)
                 instance.setVariableArrayFloat("C_sp", INIT_CELL_CONCENTRATION_VALS)
+                instance.setVariableArrayFloat("C_sp_sat", INIT_CELL_SAT_CONCENTRATION_VALS)
                 instance.setVariableArrayFloat("k_consumption", INIT_CELL_CONSUMPTION_RATES)
                 instance.setVariableArrayFloat("k_production", INIT_CELL_PRODUCTION_RATES)
+                instance.setVariableArrayFloat("k_reaction", INIT_CELL_REACTION_RATES)
                 instance.setVariableFloat("radius", radius)
                 cycle_phase = random.randint(1, 4) # [1:G1] [2:S] [3:G2] [4:M]
                 instance.setVariableInt("cycle_phase", cycle_phase)
