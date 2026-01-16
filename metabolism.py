@@ -22,13 +22,13 @@ start_time = time.time()
 # Set whether to run single model or ensemble, agent population size, and simulation steps 
 ENSEMBLE = False
 ENSEMBLE_RUNS = 0
-VISUALISATION = True  # Change to false if pyflamegpu has not been built with visualisation support
+VISUALISATION = False  # Change to false if pyflamegpu has not been built with visualisation support
 DEBUG_PRINTING = False
 PAUSE_EVERY_STEP = False  # If True, the visualization stops every step until P is pressed
 SAVE_PICKLE = True  # If True, dumps agent and boudary force data into a pickle file for post-processing
 SHOW_PLOTS = False  # Show plots at the end of the simulation
 SAVE_DATA_TO_FILE = True  # If true, agent data is exported to .vtk file every SAVE_EVERY_N_STEPS steps
-SAVE_EVERY_N_STEPS = 10  # Affects both the .vtk files and the Dataframes storing boundary data
+SAVE_EVERY_N_STEPS = 100  # Affects both the .vtk files and the Dataframes storing boundary data
 
 CURR_PATH = pathlib.Path().absolute()
 RES_PATH = CURR_PATH / 'result_files'
@@ -43,8 +43,8 @@ N = 10
 
 # Time simulation parameters
 # +--------------------------------------------------------------------+
-TIME_STEP = 0.025  # time. WARNING: diffusion and cell migration events might need different scales
-STEPS = 300
+TIME_STEP = 0.01  # time. WARNING: diffusion and cell migration events might need different scales
+STEPS = 6000
 
 # Boundary interactions and mechanical parameters
 # +--------------------------------------------------------------------+
@@ -52,8 +52,8 @@ ECM_K_ELAST = 0.2  # [N/units/kg]
 ECM_D_DUMPING = 0.04  # [N*s/units/kg]
 ECM_ETA = 1  # [1/time]
 
-BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]  # +X,-X,+Y,-Y,+Z,-Z
-#BOUNDARY_COORDS = [1000.0, -1000.0, 650.0, -650.0, 150.0, -150.0] # microdevice dimensions in um
+#BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]  # +X,-X,+Y,-Y,+Z,-Z
+BOUNDARY_COORDS = [100.0, -100.0, 100.0, -100.0, 100.0, -100.0] # microdevice dimensions in um
 #BOUNDARY_COORDS = [coord / 1000.0 for coord in BOUNDARY_COORDS] # in mm
 BOUNDARY_DISP_RATES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # perpendicular to each surface (+X,-X,+Y,-Y,+Z,-Z) [units/time]
 BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/time]
@@ -139,21 +139,14 @@ if OSCILLATORY_SHEAR_ASSAY:
 # +--------------------------------------------------------------------+
 INCLUDE_DIFFUSION = True
 N_SPECIES = 2  # number of diffusing species.WARNING: make sure that the value coincides with the one declared in TODO
-DIFFUSION_COEFF_MULTI = [0.05, 0.05]  # diffusion coefficient in [units^2/s] per specie
-BOUNDARY_CONC_INIT_MULTI = [[-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+DIFFUSION_COEFF_MULTI = [100.0, 300.0]  # diffusion coefficient in [units^2/s] per specie
+BOUNDARY_CONC_INIT_MULTI = [[38.0, 38.0, 38.0, 38.0, 38.0, 38.0],
                             # initial concentration at each surface (+X,-X,+Y,-Y,+Z,-Z) [units^2/s]. -1.0 means no condition assigned. All agents are assigned 0 by default.
-                            [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0]]  # add as many lines as different species
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]  # add as many lines as different species
 
-BOUNDARY_CONC_FIXED_MULTI = [[-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+BOUNDARY_CONC_FIXED_MULTI = [[38.0, 38.0, 38.0, 38.0, 38.0, 38.0],
                              # concentration boundary conditions at each surface. WARNING: -1.0 means initial condition prevails. Don't use 0.0 as initial condition if that value is not fixed. Use -1.0 instead
-                             [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0]]  # add as many lines as different species
-
-INIT_ECM_CONCENTRATION_VALS = [0.0, 0.0]  # initial concentration of each species on the ECM agents
-INIT_CELL_CONCENTRATION_VALS = [0.0, 0.0]  # initial concentration of each species on the CELL agents
-INIT_CELL_SAT_CONCENTRATION_VALS = [1.0, 1.0]  # initial saturation concentration of each species on the CELL agents
-INIT_CELL_CONSUMPTION_RATES = [0.0, 0.0]  # consumption rate of each species by the CELL agents 
-INIT_CELL_PRODUCTION_RATES = [0.1, 0.05]  # production rate of each species by the CELL agents 
-INIT_CELL_REACTION_RATES = [0.1, 0.05]  # metabolic reaction rates of each species by the CELL agents 
+                             [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]  # add as many lines as different species
 # Cell agent related paramenters
 # +--------------------------------------------------------------------+
 INCLUDE_CELLS = True
@@ -165,7 +158,7 @@ CELL_ORIENTATION_RATE = 1.0  # [1/time] TODO: check whether cell reorient themse
 N_CELLS = 1
 CELL_K_ELAST = 2.0  # [N/units/kg]
 CELL_D_DUMPING = 0.4  # [N*time/units/kg]
-CELL_RADIUS = ECM_ECM_EQUILIBRIUM_DISTANCE / 2 # [units]
+CELL_RADIUS = 8.412 #ECM_ECM_EQUILIBRIUM_DISTANCE / 2 # [units]
 CELL_SPEED_REF = ECM_ECM_EQUILIBRIUM_DISTANCE / TIME_STEP / 10.0 # [units/time]
 CYCLE_PHASE_G1_DURATION = 10.0 #[h]
 CYCLE_PHASE_S_DURATION = 8.0
@@ -176,6 +169,15 @@ CYCLE_PHASE_S_START = CYCLE_PHASE_G1_DURATION
 CYCLE_PHASE_G2_START = CYCLE_PHASE_G1_DURATION + CYCLE_PHASE_S_DURATION
 CYCLE_PHASE_M_START = CYCLE_PHASE_G1_DURATION + CYCLE_PHASE_S_DURATION + CYCLE_PHASE_G2_DURATION
 CELL_CYCLE_DURATION = CYCLE_PHASE_G1_DURATION + CYCLE_PHASE_S_DURATION + CYCLE_PHASE_G2_DURATION + CYCLE_PHASE_M_DURATION # typically 24h [h]
+INIT_ECM_CONCENTRATION_VALS = [38.0, 50.0]  # initial concentration of each species on the ECM agents
+INIT_CELL_CONCENTRATION_VALS = [38.0, 50.0]  # initial concentration of each species on the CELL agents
+INIT_CELL_CONC_MASS_VALS = [x * (4/3 * 3.1415926 * CELL_RADIUS**3) for x in INIT_CELL_CONCENTRATION_VALS]  # initial mass of each species on the CELL agents
+INIT_ECM_SAT_CONCENTRATION_VALS = [100.0, 100.0]  # initial saturation concentration of each species on the ECM agents
+INIT_CELL_CONSUMPTION_RATES = [0.005, 0.0]  # consumption rate of each species by the CELL agents 
+INIT_CELL_PRODUCTION_RATES = [0.0, 10.0]  # production rate of each species by the CELL agents 
+INIT_CELL_REACTION_RATES = [0.1, 0.05]  # metabolic reaction rates of each species by the CELL agents 
+
+
 
 # Other simulation parameters: TODO: INCLUDE PARALLEL DISP RATES
 # +--------------------------------------------------------------------+
@@ -241,6 +243,7 @@ if INCLUDE_DIFFUSION:
             print(
                 'ERROR: diffusion problem is ill conditioned (Fi_z should be < 0.5), check parameters and consider decreasing time step')
             critical_error = True
+    critical_error = False # TODO: to bypass diffusion checks for testing purposes. Create variable to do full explicit vs relaxed forward-euler depending on stability
 
 if INCLUDE_CELLS:
     if MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION < (2 * CELL_RADIUS):
@@ -400,6 +403,7 @@ ECM_grid_location_message.newVariableUInt8("grid_i")
 ECM_grid_location_message.newVariableUInt8("grid_j")
 ECM_grid_location_message.newVariableUInt8("grid_k")
 ECM_grid_location_message.newVariableArrayFloat("C_sp", N_SPECIES) 
+ECM_grid_location_message.newVariableArrayFloat("C_sp_sat", N_SPECIES) 
 ECM_grid_location_message.newVariableFloat("k_elast")
 ECM_grid_location_message.newVariableFloat("d_dumping")
 ECM_grid_location_message.newVariableFloat("vx")
@@ -433,7 +437,7 @@ CELL_spatial_location_message.newVariableArrayFloat("k_consumption", N_SPECIES)
 CELL_spatial_location_message.newVariableArrayFloat("k_production", N_SPECIES) 
 CELL_spatial_location_message.newVariableArrayFloat("k_reaction", N_SPECIES) 
 CELL_spatial_location_message.newVariableArrayFloat("C_sp", N_SPECIES) 
-CELL_spatial_location_message.newVariableArrayFloat("C_sp_sat", N_SPECIES) 
+CELL_spatial_location_message.newVariableArrayFloat("M_sp", N_SPECIES)
 CELL_spatial_location_message.newVariableFloat("radius")
 CELL_spatial_location_message.newVariableFloat("cycle_phase")
 CELL_spatial_location_message.newVariableFloat("clock")
@@ -457,6 +461,7 @@ ECM_agent.newVariableUInt8("grid_i", 0)
 ECM_agent.newVariableUInt8("grid_j", 0)
 ECM_agent.newVariableUInt8("grid_k", 0)
 ECM_agent.newVariableArrayFloat("C_sp", N_SPECIES) 
+ECM_agent.newVariableArrayFloat("C_sp_sat", N_SPECIES) 
 ECM_agent.newVariableFloat("k_elast")
 ECM_agent.newVariableFloat("d_dumping")
 ECM_agent.newVariableFloat("vx")
@@ -500,7 +505,7 @@ if INCLUDE_CELLS:
     CELL_agent.newVariableArrayFloat("k_production", N_SPECIES) 
     CELL_agent.newVariableArrayFloat("k_reaction", N_SPECIES) 
     CELL_agent.newVariableArrayFloat("C_sp", N_SPECIES) 
-    CELL_agent.newVariableArrayFloat("C_sp_sat", N_SPECIES) 
+    CELL_agent.newVariableArrayFloat("M_sp", N_SPECIES)    
     CELL_agent.newVariableFloat("radius", CELL_RADIUS)
     CELL_agent.newVariableInt("cycle_phase", 1) # [1:G1] [2:S] [3:G2] [4:M]
     CELL_agent.newVariableFloat("clock", 0.0) # internal clock of the cell to switch phases
@@ -642,7 +647,7 @@ def getRandomCoordsAroundPoint(n, px, py, pz, radius):
 # This class is used to ensure that corner agents are assigned the first 8 ids
 class initAgentPopulations(pyflamegpu.HostFunction):
     def run(self, FLAMEGPU):
-        global INIT_ECM_CONCENTRATION_VALS, INIT_CELL_CONCENTRATION_VALS, INIT_CELL_SAT_CONCENTRATION_VALS, INIT_CELL_CONSUMPTION_RATES, INIT_CELL_PRODUCTION_RATES,INIT_CELL_REACTION_RATES, N_SPECIES, INCLUDE_DIFFUSION, INCLUDE_CELLS, N_CELLS
+        global INIT_ECM_CONCENTRATION_VALS, INIT_CELL_CONCENTRATION_VALS,INIT_CELL_CONC_MASS_VALS, INIT_ECM_SAT_CONCENTRATION_VALS, INIT_CELL_CONSUMPTION_RATES, INIT_CELL_PRODUCTION_RATES,INIT_CELL_REACTION_RATES, N_SPECIES, INCLUDE_DIFFUSION, INCLUDE_CELLS, N_CELLS
         # BOUNDARY CORNERS
         current_id = FLAMEGPU.environment.getPropertyUInt("CURRENT_ID")
         coord_boundary = FLAMEGPU.environment.getPropertyArrayFloat("COORDS_BOUNDARIES")
@@ -748,6 +753,7 @@ class initAgentPopulations(pyflamegpu.HostFunction):
                     instance.setVariableFloat("k_elast", k_elast)
                     instance.setVariableFloat("d_dumping", d_dumping)
                     instance.setVariableArrayFloat("C_sp", INIT_ECM_CONCENTRATION_VALS)
+                    instance.setVariableArrayFloat("C_sp_sat", INIT_ECM_SAT_CONCENTRATION_VALS)
                     instance.setVariableUInt8("clamped_bx_pos", 0)
                     instance.setVariableUInt8("clamped_bx_neg", 0)
                     instance.setVariableUInt8("clamped_by_pos", 0)
@@ -786,7 +792,7 @@ class initAgentPopulations(pyflamegpu.HostFunction):
                 instance.setVariableFloat("k_elast", k_elast)
                 instance.setVariableFloat("d_dumping", d_dumping)
                 instance.setVariableArrayFloat("C_sp", INIT_CELL_CONCENTRATION_VALS)
-                instance.setVariableArrayFloat("C_sp_sat", INIT_CELL_SAT_CONCENTRATION_VALS)
+                instance.setVariableArrayFloat("M_sp", INIT_CELL_CONC_MASS_VALS)                
                 instance.setVariableArrayFloat("k_consumption", INIT_CELL_CONSUMPTION_RATES)
                 instance.setVariableArrayFloat("k_production", INIT_CELL_PRODUCTION_RATES)
                 instance.setVariableArrayFloat("k_reaction", INIT_CELL_REACTION_RATES)

@@ -31,9 +31,10 @@ FLAMEGPU_AGENT_FUNCTION(cell_output_location_data, flamegpu::MessageNone, flameg
   }  
 
   for (int i = 0; i < N_SPECIES; i++) {
-    float ncol = FLAMEGPU->getVariable<float, N_SPECIES>("C_sp_sat", i);
-    FLAMEGPU->message_out.setVariable<float, N_SPECIES>("C_sp_sat", i, ncol);
-  } 
+    float ncol = FLAMEGPU->getVariable<float, N_SPECIES>("M_sp", i);
+    FLAMEGPU->message_out.setVariable<float, N_SPECIES>("M_sp", i, ncol);
+  }
+
 
   return flamegpu::ALIVE;
 }

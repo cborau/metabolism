@@ -36,10 +36,11 @@ FLAMEGPU_AGENT_FUNCTION(cell_ecm_interaction_metabolism, flamegpu::MessageArray3
     C_sp[i] = FLAMEGPU->getVariable<float, N_SPECIES>("C_sp", i);
   }
 
-  float C_sp_sat[N_SPECIES] = {};
+  float M_sp[N_SPECIES] = {};
   for (int i = 0; i < N_SPECIES; i++) {
-    C_sp_sat[i] = FLAMEGPU->getVariable<float, N_SPECIES>("C_sp_sat", i);
+    M_sp[i] = FLAMEGPU->getVariable<float, N_SPECIES>("M_sp", i);
   }
+
 
     // Get number of agents per direction
   const int Nx = FLAMEGPU->environment.getProperty<int>("ECM_AGENTS_PER_DIR",0);
@@ -61,9 +62,8 @@ FLAMEGPU_AGENT_FUNCTION(cell_ecm_interaction_metabolism, flamegpu::MessageArray3
   //Define message variables (agent sending the input message)
   int message_id = 0;
   int message_grid_lin_id = 0;
-  float message_C_sp[N_SPECIES] = {}; // old concentration values
-
-  printf("Cell agent %d at pos (%2.6f , %2.6f, %2.6f) reading ECM agent at grid (%d , %d, %d) \n", agent_id, agent_x, agent_y,  agent_z, agent_grid_i, agent_grid_j, agent_grid_k);
+  float C_sp_sat[N_SPECIES] = {};
+  //printf("Cell agent %d at pos (%2.6f , %2.6f, %2.6f) reading ECM agent at grid (%d , %d, %d) \n", agent_id, agent_x, agent_y,  agent_z, agent_grid_i, agent_grid_j, agent_grid_k);
 
   // Reads the closest ECM agent grid_lin_id to read the corresponding C_SP_MACRO value
   // Then computes metabolism, updating both the cell calling agent and C_SP_MACRO values accordingly
@@ -71,68 +71,110 @@ FLAMEGPU_AGENT_FUNCTION(cell_ecm_interaction_metabolism, flamegpu::MessageArray3
   const auto message = FLAMEGPU->message_in.at(agent_grid_i, agent_grid_j, agent_grid_k);
   message_id = message.getVariable<int>("id");
   message_grid_lin_id = message.getVariable<int>("grid_lin_id");
+  
   for (int i = 0; i < N_SPECIES; i++) {
 
-    //message_C_sp[i] = (float)C_SP_MACRO[i][message_grid_lin_id]; // read concentration of species from the MACRO variable
-    
-    // Backward-Euler (implicit) time integration (unconditionally stable) of:
-    //   dC_cell/dt = k_production - k_consumption * C_cell
+    // -------------------------------------------------------------------------
+    // ECM ODE (PhysiCell-style), solved for ECM voxel concentration C_ecm:
     //
-    // Discretization from t^n to t^{n+1}:
-    //   (C^{n+1} - C^n)/dt = k_production - k_consumption * C^{n+1}
+    //   dC_ecm/dt = ( k_production*(C_sp_sat - C_ecm) - k_consumption*C_ecm ) * alpha
     //
-    // Solve for C^{n+1}:
-    //   C^{n+1} * (1 + dt * k_consumption) = C^n + dt * k_production
-    //   C^{n+1} = (C^n + dt * k_production) / (1 + dt * k_consumption)
+    // with:
+    //   alpha = V_cell / V_voxel
+    //   C_sp_sat = saturation concentration in the cell
     //
-    // Using PhysiCell-style notation:
-    //   c1 = dt * k_production
-    //   c2 = 1 + dt * k_consumption
+    // Expand:
+    //   dC_ecm/dt = alpha * ( k_production*C_sp_sat - (k_production + k_consumption)*C_ecm )
     //
-    //   C_cell^{n+1} = (C_cell^n + c1) / c2
-    //   deltaC       = C_cell^{n+1} - C_cell^n = (c1 + C_cell^n * (1 - c2)) / c2
-    // ECM receives the opposite change: -deltaC
+    // Backward Euler:
+    //   (C^{n+1} - C^n)/dt = A - B*C^{n+1}
+    //   A = alpha*k_production*C_sp_sat
+    //   B = alpha*(k_production + k_consumption)
     //
-    // Here:
-    //   C^n             = message_C_sp[i]   (value read from the ECM grid message)
-    //   C^{n+1}         = C_sp[i]           (value stored after update)
-    //   dt              = TIME_STEP         (time step)
-    //   k_production    = k_production[i]   (source rate for species i)
-    //   k_consumption   = k_consumption[i]  (linear consumption rate for species i)
+    //   C_ecm^{n+1} = (C_ecm^n + dt*A) / (1 + dt*B)
+    //
+    // Using PhysiCell nomenclature:
+    //   c1 = dt * alpha * k_production * C_sp_sat
+    //   c2 = 1  + dt * alpha * (k_production + k_consumption)
+    //   C_ecm^{n+1} = (C_ecm^n + c1) / c2
+    //
+    // Mass conservation via cell "amount" M_sp and voxel concentration C_ecm:
+    //   M_voxel = C_ecm * V_voxel
+    //
+    // Proposed mass change:
+    //   deltaM_voxel_prop = (C_ecm_prop - C_ecm_old) * V_voxel
+    //
+    // Clamp BOTH directions to prevent negative concentrations/amounts:
+    //   - Uptake (deltaM_voxel_prop < 0): cannot remove more than M_voxel_old
+    //   - Secretion (deltaM_voxel_prop > 0): cannot remove more than M_cell_old
+    // -------------------------------------------------------------------------
 
-    message_C_sp[i] = message.getVariable<float, N_SPECIES>("C_sp", i);  // C^n (old)
-    //printf("  -> ECM agent id %d at grid_lin_id %d has C_sp[%d] = %.6f \n", message_id, message_grid_lin_id, i+1, message_C_sp[i]);
-    
-    const float alpha = agent_volume / ECM_VOXEL_VOLUME; // ratio of cell volume to ECM voxel volume
-    const float C_cell_old = C_sp[i]; // CHECK THIS: is this correct? or should it be message_C_sp[i]?
-    const float c1 = alpha * TIME_STEP * k_production[i] * C_sp_sat[i] ;
+    // ECM concentration at t^n (read-only message snapshot)
+    const float C_ecm_old = message.getVariable<float, N_SPECIES>("C_sp", i);
+    C_sp_sat[i] = message.getVariable<float, N_SPECIES>("C_sp_sat", i);
+    // Cell amount at t^n (mass-like)
+    const float M_cell_old = M_sp[i];
+
+    // Volume coupling
+    const float alpha = agent_volume / ECM_VOXEL_VOLUME;
+
+    // PhysiCell-style coefficients
+    const float c1 = TIME_STEP * alpha * k_production[i] * C_sp_sat[i];
     const float c2 = 1.0f + TIME_STEP * alpha * (k_production[i] + k_consumption[i]);
 
-    const float C_cell_new = (C_cell_old + c1) / c2;
-    const float deltaC = C_cell_new - C_cell_old;
+    // Backward-Euler proposed ECM concentration
+    const float C_ecm_prop = (C_ecm_old + c1) / c2;
 
-    // Update cell concentration. Cap at zero minimum
-    if (C_cell_new < 0.0f) {
-      C_sp[i] = 0.0f;
-    } else {
-      C_sp[i] = C_cell_new;
-    }
+    // Convert to proposed voxel mass change
+    const float M_voxel_old = C_ecm_old * ECM_VOXEL_VOLUME;
+    const float M_voxel_prop = C_ecm_prop * ECM_VOXEL_VOLUME;
+    const float deltaM_voxel_prop = M_voxel_prop - M_voxel_old;  // >0 secretion, <0 uptake
+
+    // Clamp proposed transfer to keep both voxel concentration and cell amount non-negative
+    float deltaM_voxel = deltaM_voxel_prop;
     
-    // Update ECM MACRO concentration before metabolism. Cap at zero minimum
-    if (message_C_sp[i] - deltaC < 0.0f) {
-      C_SP_MACRO[i][message_grid_lin_id].exchange(0.0f);
-    } else 
-    {
-      C_SP_MACRO[i][message_grid_lin_id].exchange(message_C_sp[i] - deltaC);
+    if (deltaM_voxel_prop < 0.0f) {
+      // Uptake: voxel loses mass, cell gains mass
+      const float uptake = -deltaM_voxel_prop;
+      const float uptake_clamped = fminf(uptake, M_voxel_old);
+      deltaM_voxel = -uptake_clamped;
+    } else if (deltaM_voxel_prop > 0.0f) {
+      // Secretion: voxel gains mass, cell loses mass
+      const float secretion = deltaM_voxel_prop;
+      const float secretion_clamped = fminf(secretion, M_cell_old);
+      deltaM_voxel = secretion_clamped;
     }
+
+    // printf("  Species %d: C_ecm_old=%2.6f, C_ecm_prop=%2.6f, C_sp_sat=%2.6f, M_voxel_old=%2.6f, M_cell_old=%2.6f, deltaM_voxel_prop=%2.6f \n", i, C_ecm_old, C_ecm_prop, C_sp_sat[i], M_voxel_old, M_cell_old, deltaM_voxel_prop);
+
+
+    // Apply clamped mass transfer (conservative)
+    const float M_voxel_new = M_voxel_old + deltaM_voxel;
+    const float M_cell_new  = M_cell_old  - deltaM_voxel;
+
+    // Convert back to concentrations
+    const float C_ecm_new = M_voxel_new / ECM_VOXEL_VOLUME;
+    const float C_cell_new = M_cell_new / agent_volume;
+
+    // Write ECM (absolute set, atomic)
+    C_SP_MACRO[i][message_grid_lin_id].exchange(C_ecm_new);
+
+    // Store cell amount + concentration mirror
+    M_sp[i] = M_cell_new;
+    C_sp[i] = C_cell_new;
+    // printf("    -> deltaM_voxel=%2.6f, C_ecm_new=%2.6f, M_cell_new=%2.6f, C_cell_new=%2.6f \n", deltaM_voxel, C_ecm_new, M_cell_new, C_cell_new);
+
+    FLAMEGPU->setVariable<float, N_SPECIES>("M_sp", i, M_sp[i]);
+    FLAMEGPU->setVariable<float, N_SPECIES>("C_sp", i, C_sp[i]);
   }
 
   // Compute metabolic reaction within the cell
-  C_sp[0] -= TIME_STEP * k_reaction[i] * C_sp[0]; // species 0 is consumed
-  C_sp[1] += TIME_STEP * k_reaction[i] * C_sp[0]; // species 1 is produced accordingly
+  C_sp[0] -= TIME_STEP * k_reaction[0] * C_sp[0]; // species 0 is consumed
+  C_sp[1] += TIME_STEP * k_reaction[1] * C_sp[0]; // species 1 is produced accordingly
 
   for (int i = 0; i < N_SPECIES; i++) {
     FLAMEGPU->setVariable<float, N_SPECIES>("C_sp", i, C_sp[i]);
+    FLAMEGPU->setVariable<float, N_SPECIES>("M_sp", i, C_sp[i] * agent_volume);
   }
 
   return flamegpu::ALIVE;

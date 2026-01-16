@@ -259,9 +259,10 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MessageArray3D, flamegpu:
   FLAMEGPU->setVariable<float>("fx", agent_fx);
   FLAMEGPU->setVariable<float>("fy", agent_fy);
   FLAMEGPU->setVariable<float>("fz", agent_fz);
-  if (id == 554) {
+  /*if (id == 554) {
     printf("ECM agent %d at grid_lin_id %d computed forces: fx %2.6f, fy %2.6f, fz %2.6f \n", id, grid_lin_id, agent_fx, agent_fy, agent_fz);
   }
+    */
 
   //Apply diffusion equation
   if (INCLUDE_DIFFUSION == 1){
@@ -280,7 +281,21 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MessageArray3D, flamegpu:
       float Fz = DIFFUSION_COEFF * TIME_STEP / powf(dz, 2.0);
       agent_C_sp_prev[i] = C_sp[i];
       //printf("agent id: %d, agent_C_sp_prev: %.6f, species: %d \n", id, agent_C_sp_prev[i], i+1);
-      C_sp[i] = agent_C_sp_prev[i] + Fx * (n_left_C_sp[i] - (2 * agent_C_sp_prev[i]) + n_right_C_sp[i]) + Fy * (n_front_C_sp[i] - (2 * agent_C_sp_prev[i]) + n_back_C_sp[i]) + Fz * (n_up_C_sp[i] - (2 * agent_C_sp_prev[i]) + n_down_C_sp[i]) + R * TIME_STEP;
+      // True explicit diffusion equation
+      //C_sp[i] = agent_C_sp_prev[i] + Fx * (n_left_C_sp[i] - (2 * agent_C_sp_prev[i]) + n_right_C_sp[i]) + Fy * (n_front_C_sp[i] - (2 * agent_C_sp_prev[i]) + n_back_C_sp[i]) + Fz * (n_up_C_sp[i] - (2 * agent_C_sp_prev[i]) + n_down_C_sp[i]) + R * TIME_STEP;
+      const float S = Fx + Fy + Fz;  // >= 0
+      const float numer =
+          agent_C_sp_prev[i]
+        + Fx * (n_left_C_sp[i] + n_right_C_sp[i])
+        + Fy * (n_front_C_sp[i] + n_back_C_sp[i])
+        + Fz * (n_up_C_sp[i] + n_down_C_sp[i])
+        + R * TIME_STEP;
+
+      C_sp[i] = numer / (1.0f + 2.0f * S);
+
+      // Prevent negative concentrations (numerical safety)
+      if (C_sp[i] < 0.0f) C_sp[i] = 0.0f;
+
       FLAMEGPU->setVariable<float, N_SPECIES>("C_sp", i, C_sp[i]);
 
       //Update macro property
