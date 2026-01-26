@@ -40,6 +40,7 @@ class ReferenceValues:
     metabolism_path: str
     n: int
     n_species: int
+    max_connectivity: int
     boundary_coords: List[Number]
     ecm_agents_per_dir: List[int]
     ecm_population_size: int
@@ -144,6 +145,7 @@ def load_reference_values(metabolism_path: str) -> ReferenceValues:
 
     N = need_int("N")
     N_SPECIES = need_int("N_SPECIES")
+    MAX_CONNECTIVITY = need_int("MAX_CONNECTIVITY")
     BOUNDARY_COORDS = need_boundary()
 
     diff_x = abs(BOUNDARY_COORDS[0] - BOUNDARY_COORDS[1])
@@ -183,6 +185,7 @@ def load_reference_values(metabolism_path: str) -> ReferenceValues:
         metabolism_path=metabolism_path,
         n=N,
         n_species=N_SPECIES,
+        max_connectivity=MAX_CONNECTIVITY,
         boundary_coords=BOUNDARY_COORDS,
         ecm_agents_per_dir=ECM_AGENTS_PER_DIR,
         ecm_population_size=ECM_POPULATION_SIZE,
@@ -325,6 +328,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     print(f"N = {ref.n}")
     print(f"N_SPECIES = {ref.n_species}")
+    print(f"MAX_CONNECTIVITY = {ref.max_connectivity}")
     print(f"ECM_AGENTS_PER_DIR = {ref.ecm_agents_per_dir}")
     print(f"ECM_POPULATION_SIZE = {ref.ecm_population_size}")
     print("")
@@ -336,6 +340,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     expected = {
         "N_SPECIES": ref.n_species,
         "ECM_POPULATION_SIZE": ref.ecm_population_size,
+        "MAX_CONNECTIVITY": ref.max_connectivity,
     }
 
     # Exclude:

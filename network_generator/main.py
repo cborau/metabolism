@@ -1,0 +1,107 @@
+import os
+import numpy as np
+from initial_network_generation import initial_network_generation
+from network_optimization import network_optimization
+from branch_optimization import branch_optimization
+from helper_functions import plot_network_3d, add_intermediate_nodes, compute_node_connectivity, scale_to_unit_cube, snap_to_boundaries, remove_boundary_connectivity, add_intermediate_nodes_to_plot, get_valency_and_pore_size, save_network_to_vtk, generate_random_vars, get_node_median_distance
+import matplotlib.pyplot as plt
+import pickle
+
+def generate_network():
+
+    l_fiber = 0.1
+    lx = 4
+    ly = 4
+    lz = 1
+    rho_base = 0.6
+    rho_scale = 1000
+    rho = rho_base * rho_scale # nodes per unit of volume
+
+    # Initial Network Generation
+    nodes, fibers, fiberenergy, total_energy, N1, N2, N_boundary_nodes, fiberlengths, valencycheck = initial_network_generation(rho, lx, ly, lz, l_fiber, 100)
+
+    N = len(nodes)
+    N_fibers = len(fibers)
+    print(f'There are {N} nodes and {N_fibers} fibers')
+    print(f'The total Initial Fiber Length Energy is {total_energy}')
+
+    # Fiber Length Optimization
+    N_anneal = 15
+    N_optimize = 5
+    stepsize = np.linspace(1, 0.1, N_optimize)
+    fraction_to_try_swap = np.linspace(0.3, 0.02, N_optimize)
+
+    for j in range(N_optimize):
+        swap_skip_energy = 3 * (np.median(fiberlengths) - l_fiber) ** 2
+        print(f'Swap skip energy threshold = {swap_skip_energy}')
+        nodes, fibers, fiberenergy, fiberlengths, total_energy, N1, N2, N_interior = network_optimization(
+            fraction_to_try_swap[j], N, nodes, fibers, N_anneal, lx, ly, lz, l_fiber,
+            fiberlengths, fiberenergy, N1, N2, N_boundary_nodes, stepsize[j], swap_skip_energy
+        )
+        percent_done = 100 * (j + 1) / N_optimize
+        print(f'Percent optimized = {percent_done}')
+        print('_________________________________________')
+
+
+    plt.figure()
+    plt.hist(fiberlengths, bins=50)
+    plt.title('Fiber Length Distribution after Optimization')
+    plt.show()
+
+    # Branching Optimization
+    N_branching_optimize = 4
+    nodes, fibers, nodal_branching_energy, total_branching_energy_init, total_branching_energy_final = branch_optimization(
+        N_branching_optimize, nodes, fibers, N
+    )
+
+    return nodes, fibers
+  
+
+if __name__ == "__main__":
+
+    MAX_CONNECTIVITY = 8
+    EDGE_LENGTH = 0.1
+    file_name = 'network_3d.pkl'
+    file_path = os.path.abspath(file_name)
+
+    # Check if the file exists
+    if os.path.exists(file_name):
+        print(f'Loading network from {file_path}')
+        # Load from the pickle file
+        with open(file_name, 'rb') as f:
+            data = pickle.load(f)
+            nodes = data['node_coords']
+            connectivity = data['connectivity']
+    else: 
+        nodes, fibers = generate_network()
+        #nodes = scale_to_unit_cube(nodes)
+        #nodes = snap_to_boundaries(nodes, 10, boundaries = ['+y', '-y'])
+        #
+        # Plot the network
+        
+        num_nodes = nodes.shape[0]
+        node_connectivity = compute_node_connectivity(fibers, num_nodes, MAX_CONNECTIVITY)
+        plot_network_3d(nodes, node_connectivity, title ='before fix')
+
+        nodes, node_connectivity = remove_boundary_connectivity(nodes, node_connectivity)
+        fig, ax = plot_network_3d(nodes, node_connectivity, title ='after fix')
+
+        new_nodes, new_connectivity = add_intermediate_nodes(nodes, node_connectivity, EDGE_LENGTH, MAX_CONNECTIVITY)
+        add_intermediate_nodes_to_plot(ax, new_nodes)
+
+        plt.show()
+        # Save to a pickle file
+        print(f'Saving network to {file_path}')
+        with open('network_3d.pkl', 'wb') as f:
+            pickle.dump({'node_coords': new_nodes, 'connectivity': new_connectivity}, f)
+        connectivity = new_connectivity.copy()
+        nodes = new_nodes.copy()
+
+    
+    get_valency_and_pore_size(nodes, connectivity, MAX_CONNECTIVITY)
+    scalar_vars, vector_vars = generate_random_vars(nodes)
+    save_network_to_vtk('network_3d.vtk', nodes, connectivity, scalar_vars=scalar_vars, vector_vars=vector_vars)
+    median_edge_length = get_node_median_distance(nodes, connectivity, plot_histogram=True)
+    print(f'Median edge length: {median_edge_length}')
+    plot_network_3d(nodes, connectivity, title ='before fix')
+    plt.show()

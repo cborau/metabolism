@@ -13,6 +13,8 @@ from dataclasses import make_dataclass
 import pandas as pd
 import numpy as np
 import random
+import os
+import pickle
 
 start_time = time.time()
 
@@ -135,10 +137,40 @@ if OSCILLATORY_SHEAR_ASSAY:
             BOUNDARY_DISP_RATES_PARALLEL[d] = OSCILLATORY_AMPLITUDE * math.cos(
                 OSCILLATORY_W * 0.0) * OSCILLATORY_W / TIME_STEP  # cos(w*t)*w is used because the slope of the sin(w*t) function is needed. Expressed in units/sec
 
+
+# Network parameters
+# +--------------------------------------------------------------------+
+
+file_name = 'network_3d.pkl'
+# Check if the file exists
+if os.path.exists(file_name):
+    print(f'Loading network from {file_name}')
+    # Load from the pickle file
+    with open(file_name, 'rb') as f:
+        data = pickle.load(f)
+        nodes = data['node_coords']
+        connectivity = data['connectivity']
+else:
+    print(f"ERROR: file {file_name} containing network nodes and connectivity was not found")
+N_NODES = nodes.shape[0]
+NODE_COORDS = nodes
+INITIAL_NETWORK_CONNECTIVITY = connectivity
+MAX_CONNECTIVITY = 8
+FIBRE_SEGMENT_K_ELAST = 4.0  # [N/units/kg]
+FIBRE_SEGMENT_D_DUMPING = 2.0  # [N*s/units/kg]
+FIBRE_SEGMENT_MASS = 1.0  # [dimensionless to make K and D mass dependent]
+FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE = 0.1
+FIBRE_NODE_BOUNDARY_INTERACTION_RADIUS = 0.05
+FIBRE_NODE_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.0
+MAX_SEARCH_RADIUS_FNODES = FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE / 10.0 # must me smaller than FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE
+
+
+
 # Diffusion related paramenters
 # +--------------------------------------------------------------------+
 INCLUDE_DIFFUSION = True
 N_SPECIES = 2  # number of diffusing species.WARNING: make sure that the value coincides with the one declared in TODO
+MAX_CONNECTIVITY = 8  # must match hard-coded C++ values
 DIFFUSION_COEFF_MULTI = [300.0, 300.0]  # diffusion coefficient in [units^2/s] per specie
 BOUNDARY_CONC_INIT_MULTI = [[50.0,50.0, 50.0, 50.0, 50.0, 50.0],
                             # initial concentration at each surface (+X,-X,+Y,-Y,+Z,-Z) [units^2/s]. -1.0 means no condition assigned. All agents are assigned 0 by default.
@@ -356,6 +388,16 @@ cell_move_file = "cell_move.cpp"
 bcorner_output_location_data_file = "bcorner_output_location_data.cpp"
 bcorner_move_file = "bcorner_move.cpp"
 
+"""
+  FIBRE NODES
+"""
+fnode_spatial_location_data_file = "fnode_spatial_location_data.cpp"
+fnode_bucket_location_data_file = "fnode_bucket_location_data.cpp"
+fnode_boundary_interaction_file = "fnode_boundary_interaction.cpp"
+fnode_fnode_spatial_interaction_file = "fnode_fnode_spatial_interaction.cpp"
+fnode_fnode_bucket_interaction_file = "fnode_fnode_bucket_interaction.cpp"
+fnode_move_file = "fnode_move.cpp"
+
 
 model = pyflamegpu.ModelDescription("metabolism")
 
@@ -401,7 +443,10 @@ env.newPropertyArrayFloat("BOUNDARY_DUMPING", BOUNDARY_DUMPING)
 env.newPropertyArrayUInt("ALLOW_AGENT_SLIDING", ALLOW_AGENT_SLIDING)
 env.newPropertyFloat("ECM_BOUNDARY_INTERACTION_RADIUS", ECM_BOUNDARY_INTERACTION_RADIUS)
 env.newPropertyFloat("ECM_BOUNDARY_EQUILIBRIUM_DISTANCE", ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
-# Model globals
+env.newPropertyFloat("FIBRE_NODE_BOUNDARY_INTERACTION_RADIUS", FIBRE_NODE_BOUNDARY_INTERACTION_RADIUS)
+env.newPropertyFloat("FIBRE_NODE_BOUNDARY_EQUILIBRIUM_DISTANCE", FIBRE_NODE_BOUNDARY_EQUILIBRIUM_DISTANCE)
+env.newPropertyFloat("FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE",FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE)
+# Model macro/globals
 env.newMacroPropertyFloat("C_SP_MACRO", N_SPECIES, ECM_POPULATION_SIZE)
 env.newMacroPropertyFloat("BOUNDARY_CONC_INIT_MULTI", N_SPECIES,
                           6)  # a 2D matrix with the 6 boundary conditions (columns) for each species (rows)
@@ -409,6 +454,11 @@ env.newMacroPropertyFloat("BOUNDARY_CONC_FIXED_MULTI", N_SPECIES,
                           6)  # a 2D matrix with the 6 boundary conditions (columns) for each species (rows)
 env.newPropertyUInt("ECM_POPULATION_SIZE", ECM_POPULATION_SIZE)
 
+# Fibre network parameters
+env.newPropertyFloat("MAX_SEARCH_RADIUS_FNODES",MAX_SEARCH_RADIUS_FNODES)
+env.newPropertyFloat("FIBRE_SEGMENT_K_ELAST",FIBRE_SEGMENT_K_ELAST)
+env.newPropertyFloat("FIBRE_SEGMENT_D_DUMPING",FIBRE_SEGMENT_D_DUMPING)
+env.newPropertyFloat("FIBRE_SEGMENT_MASS",FIBRE_SEGMENT_MASS)
 # Cell properties
 env.newPropertyUInt("INCLUDE_CELL_ORIENTATION", INCLUDE_CELL_ORIENTATION)
 env.newPropertyUInt("INCLUDE_CELL_CELL_INTERACTION", INCLUDE_CELL_CELL_INTERACTION)
@@ -462,6 +512,13 @@ bcorner_location_message.setMin(MIN_EXPECTED_BOUNDARY_POS, MIN_EXPECTED_BOUNDARY
 bcorner_location_message.setMax(MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS)
 # A message to hold the location of an agent. WARNING: spatial3D messages already define x,y,z variables internally.
 bcorner_location_message.newVariableInt("id")
+
+fnode_spatial_location_message = model.newMessageSpatial3D("fnode_spatial_location_message")
+fnode_spatial_location_message.setRadius(MAX_SEARCH_RADIUS_FNODES)  
+fnode_spatial_location_message.setMin(MIN_EXPECTED_BOUNDARY_POS, MIN_EXPECTED_BOUNDARY_POS,MIN_EXPECTED_BOUNDARY_POS)
+fnode_spatial_location_message.setMax(MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS,MAX_EXPECTED_BOUNDARY_POS)
+fnode_spatial_location_message.newVariableInt("id") # as an edge can have multiple inner agents, this stores the position within the edge
+
 
 ECM_grid_location_message = model.newMessageArray3D("ECM_grid_location_message")
 ECM_grid_location_message.setDimensions(ECM_AGENTS_PER_DIR[0], ECM_AGENTS_PER_DIR[1], ECM_AGENTS_PER_DIR[2])
