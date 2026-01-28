@@ -18,6 +18,11 @@ def generate_network(lx, ly, lz, l_fiber,rho, enforce_bounds=False, bound_mode="
     print(f'The total Initial Fiber Length Energy is {total_energy}')
 
     # Fiber Length Optimization
+    # N_anneal: number of simulated-annealing sweeps per round. Simulated annealing
+    #           is a stochastic search that accepts some worse moves early to escape
+    #           local minima, then becomes more selective. More sweeps = more trials.
+    # N_optimize: number of outer rounds with progressively smaller stepsizes and
+    #            swap fractions (cooling schedule), refining the network.
     N_anneal = 15
     N_optimize = 5
     stepsize = np.linspace(1, 0.1, N_optimize)
@@ -57,15 +62,15 @@ if __name__ == "__main__":
     MAX_CONNECTIVITY = 8
     # Units: choose any consistent spatial unit (e.g., microns).
     # All lengths below (LX, LY, LZ, L_FIBER, EDGE_LENGTH, SNAP_DISTANCE) use that unit.
-    LX = 50
-    LY = 20
-    LZ = 10
-    L_FIBER = 1.0
-    RHO = 1.0 # number of nodes per unit volume
+    LX = 200
+    LY = 200
+    LZ = 200
+    L_FIBER = 20.0
+    RHO = 0.001 # number of nodes per unit volume
 
     # EDGE_LENGTH controls the target segment length when splitting long fibers.
     # Units must match l_fiber and lx/ly/lz.
-    EDGE_LENGTH = 0.5
+    EDGE_LENGTH = 5.0
     file_name = 'network_3d.pkl'
     file_path = os.path.abspath(file_name)
 
@@ -107,15 +112,15 @@ if __name__ == "__main__":
         
         num_nodes = nodes.shape[0]
         node_connectivity = compute_node_connectivity(fibers, num_nodes, MAX_CONNECTIVITY)
-        plot_network_3d(nodes, node_connectivity, title ='before fix')
+        #plot_network_3d(nodes, node_connectivity, title ='before fix')
 
         nodes, node_connectivity = remove_boundary_connectivity(nodes, node_connectivity, bounds=bounds)
-        fig, ax = plot_network_3d(nodes, node_connectivity, title ='after fix')
+        # fig, ax = plot_network_3d(nodes, node_connectivity, title ='after fix')
 
         new_nodes, new_connectivity = add_intermediate_nodes(nodes, node_connectivity, EDGE_LENGTH, MAX_CONNECTIVITY)
-        add_intermediate_nodes_to_plot(ax, new_nodes)
+        # add_intermediate_nodes_to_plot(ax, new_nodes)
 
-        plt.show()
+        #plt.show()
         # Save to a pickle file
         print(f'Saving network to {file_path}')
         with open('network_3d.pkl', 'wb') as f:

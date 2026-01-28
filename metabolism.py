@@ -24,7 +24,7 @@ start_time = time.time()
 # Set whether to run single model or ensemble, agent population size, and simulation steps 
 ENSEMBLE = False
 ENSEMBLE_RUNS = 0
-VISUALISATION = True  # Change to false if pyflamegpu has not been built with visualisation support
+VISUALISATION = False  # Change to false if pyflamegpu has not been built with visualisation support
 DEBUG_PRINTING = False
 PAUSE_EVERY_STEP = False  # If True, the visualization stops every step until P is pressed
 SAVE_PICKLE = True  # If True, dumps agent and boudary force data into a pickle file for post-processing
@@ -46,7 +46,7 @@ N = 21
 # Time simulation parameters
 # +--------------------------------------------------------------------+
 TIME_STEP = 0.01  # time. WARNING: diffusion and cell migration events might need different scales
-STEPS = 6000
+STEPS = 600
 
 # Boundary interactions and mechanical parameters
 # +--------------------------------------------------------------------+
@@ -57,7 +57,7 @@ ECM_ETA = 1  # [1/time]
 #BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]  # +X,-X,+Y,-Y,+Z,-Z
 BOUNDARY_COORDS = [100.0, -100.0, 100.0, -100.0, 100.0, -100.0] # microdevice dimensions in um
 #BOUNDARY_COORDS = [coord / 1000.0 for coord in BOUNDARY_COORDS] # in mm
-BOUNDARY_DISP_RATES = [-1.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # perpendicular to each surface (+X,-X,+Y,-Y,+Z,-Z) [units/time]
+BOUNDARY_DISP_RATES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # perpendicular to each surface (+X,-X,+Y,-Y,+Z,-Z) [units/time]
 BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/time]
 
 POISSON_DIRS = [0, 1]  # 0: xdir, 1:ydir, 2:zdir. poisson_ratio ~= -incL(dir1)/incL(dir2) dir2 is the direction in which the load is applied
@@ -152,6 +152,7 @@ if INCLUDE_FIBRE_NETWORK:
             data = pickle.load(f)
             nodes = data['node_coords']
             connectivity = data['connectivity']
+        print(f'Network loaded: {nodes.shape[0]} nodes, {len(connectivity)} fibers')
     else:
         print(f"ERROR: file {file_name} containing network nodes and connectivity was not found")
     N_NODES = nodes.shape[0]
@@ -313,6 +314,35 @@ msg_incompatible_conditions = "ERROR: CLAMP_AGENT_TOUCHING_BOUNDARY condition is
 for i in range(6):
     if CLAMP_AGENT_TOUCHING_BOUNDARY[i] > 0 and ALLOW_BOUNDARY_ELASTIC_MOVEMENT[i] > 0:
         print(msg_incompatible_conditions.format(i))
+        critical_error = True
+
+
+if INCLUDE_FIBRE_NETWORK:
+    # Safety check: ensure nodes exist on both faces for at least two axes
+    # (e.g., nodes on +X and -X, and on +Y and -Y).
+    msg_wrong_network_dimensions = ("WARNING: Fibre network nodes do not coincide with boundary faces on at least two axes. "
+            "Check NODE_COORDS vs BOUNDARY_COORDS or regenerate the network.")
+
+    x_max, x_min, y_max, y_min, z_max, z_min = BOUNDARY_COORDS
+    axes_with_both_faces = 0
+
+    has_x_pos = np.any(np.isclose(NODE_COORDS[:, 0], x_max, atol=EPSILON))
+    has_x_neg = np.any(np.isclose(NODE_COORDS[:, 0], x_min, atol=EPSILON))
+    if has_x_pos and has_x_neg:
+        axes_with_both_faces += 1
+
+    has_y_pos = np.any(np.isclose(NODE_COORDS[:, 1], y_max, atol=EPSILON))
+    has_y_neg = np.any(np.isclose(NODE_COORDS[:, 1], y_min, atol=EPSILON))
+    if has_y_pos and has_y_neg:
+        axes_with_both_faces += 1
+
+    has_z_pos = np.any(np.isclose(NODE_COORDS[:, 2], z_max, atol=EPSILON))
+    has_z_neg = np.any(np.isclose(NODE_COORDS[:, 2], z_min, atol=EPSILON))
+    if has_z_pos and has_z_neg:
+        axes_with_both_faces += 1
+
+    if axes_with_both_faces < 2:
+        print(msg_wrong_network_dimensions)
         critical_error = True
 
 UNSTABLE_DIFFUSION = False
@@ -517,28 +547,30 @@ bcorner_location_message.setMax(MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY
 # A message to hold the location of an agent. WARNING: spatial3D messages already define x,y,z variables internally.
 bcorner_location_message.newVariableInt("id")
 
-fnode_spatial_location_message = model.newMessageSpatial3D("fnode_spatial_location_message")
-fnode_spatial_location_message.setRadius(MAX_SEARCH_RADIUS_FNODES)  
-fnode_spatial_location_message.setMin(MIN_EXPECTED_BOUNDARY_POS, MIN_EXPECTED_BOUNDARY_POS,MIN_EXPECTED_BOUNDARY_POS)
-fnode_spatial_location_message.setMax(MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS,MAX_EXPECTED_BOUNDARY_POS)
-fnode_spatial_location_message.newVariableInt("id") # as an edge can have multiple inner agents, this stores the position within the edge
 
-fnode_bucket_location_message = model.newMessageBucket("fnode_bucket_location_message")
-# Set the range and bounds.
-# setBounds(min, max) where min and max are the min and max ids of the message buckets. This is independent of the number of agents (there can be more agents than buckets and vice versa).
-# Here, we assign one bucket per fibre node so that each fibre node can be found in its own bucket when searching for neighbours.
-fnode_bucket_location_message.setBounds(8,N_NODES + 8) # +8 because domain corners have idx from 1 to 8. WARNING: make sure to initialize fibre nodes starting from index 9
+if INCLUDE_FIBRE_NETWORK:
+    fnode_spatial_location_message = model.newMessageSpatial3D("fnode_spatial_location_message")
+    fnode_spatial_location_message.setRadius(MAX_SEARCH_RADIUS_FNODES)  
+    fnode_spatial_location_message.setMin(MIN_EXPECTED_BOUNDARY_POS, MIN_EXPECTED_BOUNDARY_POS,MIN_EXPECTED_BOUNDARY_POS)
+    fnode_spatial_location_message.setMax(MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS,MAX_EXPECTED_BOUNDARY_POS)
+    fnode_spatial_location_message.newVariableInt("id") # as an edge can have multiple inner agents, this stores the position within the edge
 
-fnode_bucket_location_message.newVariableInt("id")
-fnode_bucket_location_message.newVariableFloat("x")
-fnode_bucket_location_message.newVariableFloat("y")
-fnode_bucket_location_message.newVariableFloat("z")
-fnode_bucket_location_message.newVariableFloat("vx")
-fnode_bucket_location_message.newVariableFloat("vy")
-fnode_bucket_location_message.newVariableFloat("vz")
-fnode_bucket_location_message.newVariableFloat("k_elast")
-fnode_bucket_location_message.newVariableFloat("d_dumping")
-fnode_bucket_location_message.newVariableArrayUInt("linked_nodes", MAX_CONNECTIVITY) # store the index of the linked nodes, which is a proxy for the bucket id
+    fnode_bucket_location_message = model.newMessageBucket("fnode_bucket_location_message")
+    # Set the range and bounds.
+    # setBounds(min, max) where min and max are the min and max ids of the message buckets. This is independent of the number of agents (there can be more agents than buckets and vice versa).
+    # Here, we assign one bucket per fibre node so that each fibre node can be found in its own bucket when searching for neighbours.
+    fnode_bucket_location_message.setBounds(8,N_NODES + 8) # +8 because domain corners have idx from 1 to 8. WARNING: make sure to initialize fibre nodes starting from index 9
+
+    fnode_bucket_location_message.newVariableInt("id")
+    fnode_bucket_location_message.newVariableFloat("x")
+    fnode_bucket_location_message.newVariableFloat("y")
+    fnode_bucket_location_message.newVariableFloat("z")
+    fnode_bucket_location_message.newVariableFloat("vx")
+    fnode_bucket_location_message.newVariableFloat("vy")
+    fnode_bucket_location_message.newVariableFloat("vz")
+    fnode_bucket_location_message.newVariableFloat("k_elast")
+    fnode_bucket_location_message.newVariableFloat("d_dumping")
+    fnode_bucket_location_message.newVariableArrayUInt("linked_nodes", MAX_CONNECTIVITY) # store the index of the linked nodes, which is a proxy for the bucket id
 
 
 ECM_grid_location_message = model.newMessageArray3D("ECM_grid_location_message")
@@ -1818,8 +1850,9 @@ if INCLUDE_DIFFUSION:
 if INCLUDE_CELLS:
     model.Layer("L1_Agent_Locations").addAgentFunction("CELL", "cell_output_location_data")
 if INCLUDE_FIBRE_NETWORK:
-    model.Layer("L1_Agent_Locations").addAgentFunction("FNODE", "fnode_output_location_data")
-    model.Layer("L1_Agent_Locations").addAgentFunction("FNODE", "fnode_bucket_location_data")
+    model.newLayer("L1_FNODE_Locations_1").addAgentFunction("FNODE", "fnode_spatial_location_data")
+    # These functions share data of the same agent, so must be in separate layers
+    model.newLayer("L1_FNODE_Locations_2").addAgentFunction("FNODE", "fnode_bucket_location_data")
 
 # L2: Boundary_Interactions  
 if INCLUDE_DIFFUSION:
