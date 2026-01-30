@@ -46,7 +46,7 @@ N = 21
 # Time simulation parameters
 # +--------------------------------------------------------------------+
 TIME_STEP = 0.01  # time. WARNING: diffusion and cell migration events might need different scales
-STEPS = 600
+STEPS = 5000
 
 # Boundary interactions and mechanical parameters
 # +--------------------------------------------------------------------+
@@ -58,7 +58,7 @@ ECM_ETA = 1  # [1/time]
 BOUNDARY_COORDS = [100.0, -100.0, 100.0, -100.0, 100.0, -100.0] # microdevice dimensions in um
 #BOUNDARY_COORDS = [coord / 1000.0 for coord in BOUNDARY_COORDS] # in mm
 BOUNDARY_DISP_RATES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # perpendicular to each surface (+X,-X,+Y,-Y,+Z,-Z) [units/time]
-BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/time]
+BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/time]
 
 POISSON_DIRS = [0, 1]  # 0: xdir, 1:ydir, 2:zdir. poisson_ratio ~= -incL(dir1)/incL(dir2) dir2 is the direction in which the load is applied
 ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [0, 0, 0, 0, 0, 0]  # [bool]
@@ -67,8 +67,8 @@ BOUNDARY_STIFFNESS_VALUE = 10.0  # N/units
 BOUNDARY_DUMPING_VALUE = 5.0
 BOUNDARY_STIFFNESS = [BOUNDARY_STIFFNESS_VALUE * x for x in RELATIVE_BOUNDARY_STIFFNESS]
 BOUNDARY_DUMPING = [BOUNDARY_DUMPING_VALUE * x for x in RELATIVE_BOUNDARY_STIFFNESS]
-#CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]  # +X,-X,+Y,-Y,+Z,-Z [bool] - shear assay
-CLAMP_AGENT_TOUCHING_BOUNDARY = [1, 1, 1, 1, 1, 1]  # +X,-X,+Y,-Y,+Z,-Z [bool]
+CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]  # +X,-X,+Y,-Y,+Z,-Z [bool] - shear assay
+#CLAMP_AGENT_TOUCHING_BOUNDARY = [1, 1, 1, 1, 1, 1]  # +X,-X,+Y,-Y,+Z,-Z [bool]
 ALLOW_AGENT_SLIDING = [0, 0, 0, 0, 0, 0]  # +X,-X,+Y,-Y,+Z,-Z [bool]
 
 
@@ -117,10 +117,12 @@ MAX_SEARCH_RADIUS_CELL_ECM_INTERACTION = ECM_ECM_EQUILIBRIUM_DISTANCE # this rad
 print("MAX_SEARCH_RADIUS for CELLS [units]: ", MAX_SEARCH_RADIUS_CELL_ECM_INTERACTION)
 MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION = 2 * ECM_ECM_EQUILIBRIUM_DISTANCE # this radius is used to check if cells interact with each other
 
-OSCILLATORY_SHEAR_ASSAY = False  # if true, BOUNDARY_DISP_RATES_PARALLEL options are overrun but used to make the boundaries oscillate in their corresponding planes following a sin() function
-OSCILLATORY_AMPLITUDE = 0.25  # range [0-1]
-OSCILLATORY_FREQ = 0.1  # strain oscillation frequency [time^-1]
+OSCILLATORY_SHEAR_ASSAY = True  # if True, BOUNDARY_DISP_RATES_PARALLEL options are overrun but used to make the boundaries oscillate in their corresponding planes following a sin() function
+OSCILLATORY_AMPLITUDE = 0.25 * (BOUNDARY_COORDS[2] - BOUNDARY_COORDS[3])  # range [0-1] * domain size in the direction of oscillation
+OSCILLATORY_FREQ = 0.05  # strain oscillation frequency [time^-1]
 OSCILLATORY_W = 2 * math.pi * OSCILLATORY_FREQ * TIME_STEP
+# Compute expected boundary positions after motion, WARNING: make sure the direction matches with OSCILLATORY_AMPLITUDE definition
+MAX_EXPECTED_BOUNDARY_POS_OSCILLATORY = 0.25 * (BOUNDARY_COORDS[2] - BOUNDARY_COORDS[3]) + BOUNDARY_COORDS[2]  # max pos reached at sin()=1
 
 # Fitting parameters for the fiber strain-stiffening phenomena
 # Ref: https://bio.physik.fau.de/publications/Steinwachs%20Nat%20Meth%202016.pdf
@@ -160,10 +162,10 @@ if INCLUDE_FIBRE_NETWORK:
     INITIAL_NETWORK_CONNECTIVITY = connectivity
 
 MAX_CONNECTIVITY = 8 # must match hard-coded C++ values
-FIBRE_SEGMENT_K_ELAST = 4.0  # [N/units/kg]
-FIBRE_SEGMENT_D_DUMPING = 2.0  # [N*s/units/kg]
+FIBRE_SEGMENT_K_ELAST = 0.2  # [N/units/kg]
+FIBRE_SEGMENT_D_DUMPING = 0.04  # [N*s/units/kg]
 FIBRE_SEGMENT_MASS = 1.0  # [dimensionless to make K and D mass dependent]
-FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE = 5 # WARNING: must match the value used in network generation
+FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE = 15 # WARNING: must match the value used in network generation
 FIBRE_NODE_BOUNDARY_INTERACTION_RADIUS = 0.05
 FIBRE_NODE_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.0
 MAX_SEARCH_RADIUS_FNODES = FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE / 10.0 # must me smaller than FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE
@@ -277,14 +279,19 @@ def compute_expected_boundary_pos_from_corners(
 
 # Other simulation parameters: TODO: INCLUDE PARALLEL DISP RATES
 # +--------------------------------------------------------------------+
-MIN_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS, moved_corners = compute_expected_boundary_pos_from_corners(
-    BOUNDARY_COORDS,
-    BOUNDARY_DISP_RATES,
-    BOUNDARY_DISP_RATES_PARALLEL,
-    STEPS,
-    TIME_STEP,
-)
-print("Moved corners: ", moved_corners)
+if not OSCILLATORY_SHEAR_ASSAY:
+    MIN_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS, moved_corners = compute_expected_boundary_pos_from_corners(
+        BOUNDARY_COORDS,
+        BOUNDARY_DISP_RATES,
+        BOUNDARY_DISP_RATES_PARALLEL,
+        STEPS,
+        TIME_STEP,
+    )
+    print("Moved corners: ", moved_corners)
+else:
+    MIN_EXPECTED_BOUNDARY_POS = -MAX_EXPECTED_BOUNDARY_POS_OSCILLATORY
+    MAX_EXPECTED_BOUNDARY_POS = MAX_EXPECTED_BOUNDARY_POS_OSCILLATORY
+
 print("Max expected boundary position: ", MAX_EXPECTED_BOUNDARY_POS)
 print("Min expected boundary position: ", MIN_EXPECTED_BOUNDARY_POS)
 
@@ -1983,8 +1990,6 @@ else:
 """
   Create Visualisation
 """
-print(pyflamegpu.VISUALISATION, VISUALISATION, ENSEMBLE)
-
 if pyflamegpu.VISUALISATION and VISUALISATION and not ENSEMBLE:
     vis = simulation.getVisualisation()
     # Configure vis

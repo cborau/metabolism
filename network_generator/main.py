@@ -65,12 +65,12 @@ if __name__ == "__main__":
     LX = 200
     LY = 200
     LZ = 200
-    L_FIBER = 20.0
-    RHO = 0.001 # number of nodes per unit volume
+    L_FIBER = 45.0
+    RHO = 0.0001 # number of nodes per unit volume
 
     # EDGE_LENGTH controls the target segment length when splitting long fibers.
     # Units must match l_fiber and lx/ly/lz.
-    EDGE_LENGTH = 5.0
+    EDGE_LENGTH = 15.0
     file_name = 'network_3d.pkl'
     file_path = os.path.abspath(file_name)
 
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     SNAP_BOUNDARIES = ['+x', '-x', '+y', '-y', '+z', '-z']
     SNAP_MODE = "distance"  # "percentage" or "distance"
     SNAP_PERCENTAGE = 10
-    SNAP_DISTANCE = 1.0
+    SNAP_DISTANCE = 5.0
 
     if os.path.exists(file_name):
         print(f'Loading network from {file_path}')

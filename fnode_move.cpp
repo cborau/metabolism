@@ -152,10 +152,11 @@ FLAMEGPU_AGENT_FUNCTION(fnode_move, flamegpu::MessageNone, flamegpu::MessageNone
   }
 
   //Get the new position and velocity: 
-  // a(t) = f(t) / m;
-  // v(t) = v(t-1) + a(t) * dt; 
+  // SUM(F) = ETA * v;
+  // v(t) = SUM(F) / ETA; 
   // x(t) = x(t-1) + v(t) * dt
   const float  TIME_STEP = FLAMEGPU->environment.getProperty<float>("TIME_STEP");
+  const float ECM_ETA = FLAMEGPU->environment.getProperty<float>("ECM_ETA");
   //Bound the position within the environment   
   const float COORD_BOUNDARY_X_POS = FLAMEGPU->environment.getProperty<float>("COORDS_BOUNDARIES",0);
   const float COORD_BOUNDARY_X_NEG = FLAMEGPU->environment.getProperty<float>("COORDS_BOUNDARIES",1);
@@ -182,6 +183,7 @@ FLAMEGPU_AGENT_FUNCTION(fnode_move, flamegpu::MessageNone, flamegpu::MessageNone
   const int ALLOW_AGENT_SLIDING_Z_POS = FLAMEGPU->environment.getProperty<int>("ALLOW_AGENT_SLIDING", 4);
   const int ALLOW_AGENT_SLIDING_Z_NEG = FLAMEGPU->environment.getProperty<int>("ALLOW_AGENT_SLIDING", 5);
   const float FIBRE_NODE_BOUNDARY_EQUILIBRIUM_DISTANCE = FLAMEGPU->environment.getProperty<float>("FIBRE_NODE_BOUNDARY_EQUILIBRIUM_DISTANCE");
+  const float FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE = FLAMEGPU->environment.getProperty<float>("FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE");
 
   const float DISP_RATE_BOUNDARY_PARALLEL_X_POS_Y = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 0);
   const float DISP_RATE_BOUNDARY_PARALLEL_X_POS_Z = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 1);
@@ -199,25 +201,29 @@ FLAMEGPU_AGENT_FUNCTION(fnode_move, flamegpu::MessageNone, flamegpu::MessageNone
   float prev_agent_x = agent_x;
   float prev_agent_y = agent_y;
   float prev_agent_z = agent_z;
+  float inc_pos_max = 0.0;
    
   if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) {
-    agent_vx += (agent_fx / mass) * TIME_STEP;
+    agent_vx += (agent_fx) / ECM_ETA;
     agent_x += agent_vx * TIME_STEP;
+    inc_pos_max = fmaxf(inc_pos_max, fabsf(agent_vx * TIME_STEP));
   }
 
   if ((clamped_by_pos == 0) && (clamped_by_neg == 0)) {
-    agent_vy += (agent_fy / mass) * TIME_STEP;
+    agent_vy += (agent_fy) * ECM_ETA;
     agent_y += agent_vy * TIME_STEP;
+    inc_pos_max = fmaxf(inc_pos_max, fabsf(agent_vy * TIME_STEP));
   }
   
   if ((clamped_bz_pos == 0) && (clamped_bz_neg == 0)) {
-    agent_vz += (agent_fz / mass) * TIME_STEP;
+    agent_vz += (agent_fz) * ECM_ETA;
     agent_z += agent_vz * TIME_STEP;
+    inc_pos_max = fmaxf(inc_pos_max, fabsf(agent_vz * TIME_STEP));
   }
-  
-  //if (id == 9 || id == 10 || id == 13 || id == 14 || id == 25 || id == 26 || id == 29 || id == 30) {
-  if (DEBUG_PRINTING == 1 && (id == 9 || id == 10 || id == 11 || id == 12)) {
-    printf("agent %d position ANTES (%2.4f, %2.4f, %2.4f) ->  boundary pos: [%2.4f, %2.4f, %2.4f, %2.4f, %2.4f, %2.4f], clamping: [%d, %d, %d, %d, %d, %d] \n",id, agent_x,agent_y,agent_z, COORD_BOUNDARY_X_POS, COORD_BOUNDARY_X_NEG, COORD_BOUNDARY_Y_POS, COORD_BOUNDARY_Y_NEG, COORD_BOUNDARY_Z_POS, COORD_BOUNDARY_Z_NEG, clamped_bx_pos, clamped_bx_neg, clamped_by_pos, clamped_by_neg, clamped_bz_pos, clamped_bz_neg);
+
+  if (inc_pos_max > FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE) {
+    printf("WARNING: ECM agent %d moved more than FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE = %2.6f in a single time step (moved %2.6f). Consider reducing TIME_STEP or tweaking k_elast, d_dumping.\n", id, FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE, inc_pos_max);
+    //TODO: implement a fix (e.g., scale back the movement to the maximum allowed)
   }
   
   

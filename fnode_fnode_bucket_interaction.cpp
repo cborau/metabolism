@@ -156,8 +156,11 @@ FLAMEGPU_AGENT_FUNCTION(fnode_fnode_bucket_interaction, flamegpu::MessageBucket,
       // relative speed <0 means nodes are getting closer
       relative_speed = vec3Length(agent_vx, agent_vy, agent_vz) * cosf(angle_agent_v_dir) - vec3Length(message_vx, message_vy, message_vz) * cosf(angle_message_v_dir);
 	    float relative_dist = (distance - FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE);
+
+      //print("DEBUG: ECM interaction id1: %d - id2: %d distance -> (%2.6f), relative_dist (%2.6f)\n", id, message_id, distance, relative_dist);
       if (relative_dist < 0) {
-        total_f = 0.0; // TEST: if fibre is under compression, it will buckle exerting no elastic resistance
+        //total_f = 0.0; // TEST: if fibre is under compression, it will buckle exerting no elastic resistance
+        total_f = relative_dist * (k_elast) + d_dumping * relative_speed;
       }
       else {
       // if total_f > 0, agents are attracted, if <0 agents are repelled
