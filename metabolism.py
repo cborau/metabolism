@@ -15,7 +15,9 @@ import numpy as np
 import random
 import os
 import pickle
-from helper_functions_main import compute_expected_boundary_pos_from_corners, getRandomVectors3D
+import matplotlib.pyplot as plt
+from helper_module import compute_expected_boundary_pos_from_corners, getRandomVectors3D, build_model_config_from_namespace
+
 
 start_time = time.time()
 
@@ -28,8 +30,8 @@ ENSEMBLE_RUNS = 0
 VISUALISATION = False  # Change to false if pyflamegpu has not been built with visualisation support
 DEBUG_PRINTING = False
 PAUSE_EVERY_STEP = False  # If True, the visualization stops every step until P is pressed
-SAVE_PICKLE = True  # If True, dumps agent and boudary force data into a pickle file for post-processing
-SHOW_PLOTS = False  # Show plots at the end of the simulation
+SAVE_PICKLE = True  # If True, dumps model configuration into a pickle file for post-processing
+SHOW_PLOTS = True  # Show plots at the end of the simulation
 SAVE_DATA_TO_FILE = True  # If true, agent data is exported to .vtk file every SAVE_EVERY_N_STEPS steps
 SAVE_EVERY_N_STEPS = 50  # Affects both the .vtk files and the Dataframes storing boundary data
 
@@ -59,16 +61,16 @@ ECM_ETA = 1  # [1/time]
 BOUNDARY_COORDS = [100.0, -100.0, 100.0, -100.0, 100.0, -100.0] # microdevice dimensions in um
 #BOUNDARY_COORDS = [coord / 1000.0 for coord in BOUNDARY_COORDS] # in mm
 BOUNDARY_DISP_RATES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # perpendicular to each surface (+X,-X,+Y,-Y,+Z,-Z) [units/time]
-BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/time]
+BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/time]
 
 POISSON_DIRS = [0, 1]  # 0: xdir, 1:ydir, 2:zdir. poisson_ratio ~= -incL(dir1)/incL(dir2) dir2 is the direction in which the load is applied
 ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [0, 0, 0, 0, 0, 0]  # [bool]
-RELATIVE_BOUNDARY_STIFFNESS = [0.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+RELATIVE_BOUNDARY_STIFFNESS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 BOUNDARY_STIFFNESS_VALUE = 10.0  # N/units
 BOUNDARY_DUMPING_VALUE = 5.0
 BOUNDARY_STIFFNESS = [BOUNDARY_STIFFNESS_VALUE * x for x in RELATIVE_BOUNDARY_STIFFNESS]
 BOUNDARY_DUMPING = [BOUNDARY_DUMPING_VALUE * x for x in RELATIVE_BOUNDARY_STIFFNESS]
-CLAMP_AGENT_TOUCHING_BOUNDARY = [1, 1, 1, 1, 1, 1]  # +X,-X,+Y,-Y,+Z,-Z [bool] - shear assay
+CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]  # +X,-X,+Y,-Y,+Z,-Z [bool] - shear assay
 #CLAMP_AGENT_TOUCHING_BOUNDARY = [1, 1, 1, 1, 1, 1]  # +X,-X,+Y,-Y,+Z,-Z [bool]
 ALLOW_AGENT_SLIDING = [0, 0, 0, 0, 0, 0]  # +X,-X,+Y,-Y,+Z,-Z [bool]
 
@@ -118,7 +120,7 @@ MAX_SEARCH_RADIUS_CELL_ECM_INTERACTION = ECM_ECM_EQUILIBRIUM_DISTANCE # this rad
 print("MAX_SEARCH_RADIUS for CELLS [units]: ", MAX_SEARCH_RADIUS_CELL_ECM_INTERACTION)
 MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION = 2 * ECM_ECM_EQUILIBRIUM_DISTANCE # this radius is used to check if cells interact with each other
 
-OSCILLATORY_SHEAR_ASSAY = False  # if True, BOUNDARY_DISP_RATES_PARALLEL options are overrun but used to make the boundaries oscillate in their corresponding planes following a sin() function
+OSCILLATORY_SHEAR_ASSAY = True  # if True, BOUNDARY_DISP_RATES_PARALLEL options are overrun but used to make the boundaries oscillate in their corresponding planes following a sin() function
 OSCILLATORY_AMPLITUDE = 0.25 * (BOUNDARY_COORDS[2] - BOUNDARY_COORDS[3])  # range [0-1] * domain size in the direction of oscillation
 OSCILLATORY_FREQ = 0.05  # strain oscillation frequency [time^-1]
 OSCILLATORY_W = 2 * math.pi * OSCILLATORY_FREQ * TIME_STEP
@@ -331,6 +333,8 @@ if INCLUDE_CELLS:
 
 if critical_error:
     quit()
+
+MODEL_CONFIG = build_model_config_from_namespace(globals())
 
 # +====================================================================+
 # | FLAMEGPU2 IMPLEMENTATION                                           |
@@ -1472,26 +1476,7 @@ class SaveDataToFile(pyflamegpu.HostFunction):
                     file_path = RES_PATH / file_name
 
                 agent = FLAMEGPU.agent("ECM")
-                # reaction forces, thus, opposite to agent-applied forces
-                # TODO: add ECM_FIBRE agents that transmit forces to boundaries
-                # sum_bx_pos = -agent.sumFloat("f_bx_pos")
-                # sum_bx_neg = -agent.sumFloat("f_bx_neg")
-                # sum_by_pos = -agent.sumFloat("f_by_pos")
-                # sum_by_neg = -agent.sumFloat("f_by_neg")
-                # sum_bz_pos = -agent.sumFloat("f_bz_pos")
-                # sum_bz_neg = -agent.sumFloat("f_bz_neg")
-                # sum_bx_pos_y = -agent.sumFloat("f_bx_pos_y")
-                # sum_bx_pos_z = -agent.sumFloat("f_bx_pos_z")
-                # sum_bx_neg_y = -agent.sumFloat("f_bx_neg_y")
-                # sum_bx_neg_z = -agent.sumFloat("f_bx_neg_z")
-                # sum_by_pos_x = -agent.sumFloat("f_by_pos_x")
-                # sum_by_pos_z = -agent.sumFloat("f_by_pos_z")
-                # sum_by_neg_x = -agent.sumFloat("f_by_neg_x")
-                # sum_by_neg_z = -agent.sumFloat("f_by_neg_z")
-                # sum_bz_pos_x = -agent.sumFloat("f_bz_pos_x")
-                # sum_bz_pos_y = -agent.sumFloat("f_bz_pos_y")
-                # sum_bz_neg_x = -agent.sumFloat("f_bz_neg_x")
-                # sum_bz_neg_y = -agent.sumFloat("f_bz_neg_y")
+                # reaction forces, currently unused in ECM agents. FNODE agents bear the load instead
                 sum_bx_pos = 0.0
                 sum_bx_neg = 0.0
                 sum_by_pos = 0.0
@@ -1748,11 +1733,41 @@ if MOVING_BOUNDARIES:
 # Create and configure logging details 
 logging_config = pyflamegpu.LoggingConfig(model)
 
-ECM_agent_log = logging_config.agent("ECM")
-ECM_agent_log.logCount()
+logging_config.logEnvironment("COORDS_BOUNDARIES")
+fnode_agent_log = logging_config.agent("FNODE")
+fnode_agent_log.logCount()
+fnode_agent_log.logSumFloat("f_bx_pos")
+fnode_agent_log.logSumFloat("f_bx_neg")
+fnode_agent_log.logSumFloat("f_by_pos")
+fnode_agent_log.logSumFloat("f_by_neg")
+fnode_agent_log.logSumFloat("f_bz_pos")
+fnode_agent_log.logSumFloat("f_bz_neg")
 
-CELL_agent_log = logging_config.agent("CELL")
-CELL_agent_log.logCount()
+fnode_agent_log.logSumFloat("f_bx_pos_y")
+fnode_agent_log.logSumFloat("f_bx_pos_z")
+fnode_agent_log.logSumFloat("f_bx_neg_y")
+fnode_agent_log.logSumFloat("f_bx_neg_z")
+fnode_agent_log.logSumFloat("f_by_pos_x")
+fnode_agent_log.logSumFloat("f_by_pos_z")
+fnode_agent_log.logSumFloat("f_by_neg_x")
+fnode_agent_log.logSumFloat("f_by_neg_z")
+fnode_agent_log.logSumFloat("f_bz_pos_x")
+fnode_agent_log.logSumFloat("f_bz_pos_y")
+fnode_agent_log.logSumFloat("f_bz_neg_x")
+fnode_agent_log.logSumFloat("f_bz_neg_y")
+
+fnode_agent_log.logMeanFloat("f_bx_pos")
+fnode_agent_log.logMeanFloat("f_bx_neg")
+fnode_agent_log.logMeanFloat("f_by_pos")
+fnode_agent_log.logMeanFloat("f_by_neg")
+fnode_agent_log.logMeanFloat("f_bz_pos")
+fnode_agent_log.logMeanFloat("f_bz_neg")
+fnode_agent_log.logStandardDevFloat("f_bx_pos")
+fnode_agent_log.logStandardDevFloat("f_bx_neg")
+fnode_agent_log.logStandardDevFloat("f_by_pos")
+fnode_agent_log.logStandardDevFloat("f_by_neg")
+fnode_agent_log.logStandardDevFloat("f_bz_pos")
+fnode_agent_log.logStandardDevFloat("f_bz_neg")
 
 step_log = pyflamegpu.StepLoggingConfig(logging_config)
 step_log.setFrequency(1) # if 1, data will be logged every step
@@ -1888,18 +1903,116 @@ if pyflamegpu.VISUALISATION and VISUALISATION and not ENSEMBLE:
 
 print("--- EXECUTION TIME: %s seconds ---" % (time.time() - start_time))
 
+incL_dir1 = (BPOS_OVER_TIME.iloc[:, POISSON_DIRS[0] * 2] - BPOS_OVER_TIME.iloc[:, POISSON_DIRS[0] * 2 + 1]) - (
+        BPOS_OVER_TIME.iloc[0, POISSON_DIRS[0] * 2] - BPOS_OVER_TIME.iloc[0, POISSON_DIRS[0] * 2 + 1])
+incL_dir2 = (BPOS_OVER_TIME.iloc[:, POISSON_DIRS[1] * 2] - BPOS_OVER_TIME.iloc[:, POISSON_DIRS[1] * 2 + 1]) - (
+        BPOS_OVER_TIME.iloc[0, POISSON_DIRS[1] * 2] - BPOS_OVER_TIME.iloc[0, POISSON_DIRS[1] * 2 + 1])
+
+POISSON_RATIO_OVER_TIME = -1 * incL_dir1 / incL_dir2
+
 
 def manageLogs(steps, is_ensemble, idx):
+    global SAVE_EVERY_N_STEPS, SAVE_PICKLE, SHOW_PLOTS, RES_PATH, MODEL_CONFIG
+    global BPOS_OVER_TIME, BFORCE_OVER_TIME, BFORCE_SHEAR_OVER_TIME, POISSON_RATIO_OVER_TIME, OSCILLATORY_STRAIN_OVER_TIME
+    ecm_agent_counts = [None] * len(steps)
     counter = 0
+    BFORCE = make_dataclass("BFORCE",
+                            [("fxpos", float), ("fxneg", float), ("fypos", float), ("fyneg", float), ("fzpos", float),
+                             ("fzneg", float)])
+    BFORCE_SHEAR = make_dataclass("BFORCE_SHEAR",
+                                  [("fxpos_y", float), ("fxpos_z", float), ("fxneg_y", float), ("fxneg_z", float),
+                                   ("fypos_x", float), ("fypos_z", float), ("fyneg_x", float), ("fyneg_z", float),
+                                   ("fzpos_x", float), ("fzpos_y", float), ("fzneg_x", float), ("fzneg_y", float)])
     for step in steps:
         stepcount = step.getStepCount()
         if stepcount % SAVE_EVERY_N_STEPS == 0 or stepcount == 1:
-            ECM_agents = step.getAgent("ECM")
-            # ECM_agent_counts[counter] = ECM_agents.getCount()
+            fnode_agents = step.getAgent("FNODE")
+            ecm_agent_counts[counter] = fnode_agents.getCount()
+            f_bx_pos = fnode_agents.getSumFloat("f_bx_pos")
+            f_bx_neg = fnode_agents.getSumFloat("f_bx_neg")
+            f_by_pos = fnode_agents.getSumFloat("f_by_pos")
+            f_by_neg = fnode_agents.getSumFloat("f_by_neg")
+            f_bz_pos = fnode_agents.getSumFloat("f_bz_pos")
+            f_bz_neg = fnode_agents.getSumFloat("f_bz_neg")
+            f_bx_pos_y = fnode_agents.getSumFloat("f_bx_pos_y")
+            f_bx_pos_z = fnode_agents.getSumFloat("f_bx_pos_z")
+            f_bx_neg_y = fnode_agents.getSumFloat("f_bx_neg_y")
+            f_bx_neg_z = fnode_agents.getSumFloat("f_bx_neg_z")
+            f_by_pos_x = fnode_agents.getSumFloat("f_by_pos_x")
+            f_by_pos_z = fnode_agents.getSumFloat("f_by_pos_z")
+            f_by_neg_x = fnode_agents.getSumFloat("f_by_neg_x")
+            f_by_neg_z = fnode_agents.getSumFloat("f_by_neg_z")
+            f_bz_pos_x = fnode_agents.getSumFloat("f_bz_pos_x")
+            f_bz_pos_y = fnode_agents.getSumFloat("f_bz_pos_y")
+            f_bz_neg_x = fnode_agents.getSumFloat("f_bz_neg_x")
+            f_bz_neg_y = fnode_agents.getSumFloat("f_bz_neg_y")
 
-            # CELL_agents = step.getAgent("CELL")
-            # CELL_agent_counts[counter] = CELL_agents.getCount()
-            # TODO: print/plot/save data as needed
+            step_bforce = pd.DataFrame([BFORCE(f_bx_pos, f_bx_neg, f_by_pos, f_by_neg, f_bz_pos, f_bz_neg)])
+            step_bforce_shear = pd.DataFrame([BFORCE_SHEAR(f_bx_pos_y, f_bx_pos_z, f_bx_neg_y, f_bx_neg_z,
+                                                           f_by_pos_x, f_by_pos_z, f_by_neg_x, f_by_neg_z,
+                                                           f_bz_pos_x, f_bz_pos_y, f_bz_neg_x, f_bz_neg_y)])
+            if counter == 0:
+                BFORCE_OVER_TIME = pd.DataFrame([BFORCE(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)])
+                BFORCE_SHEAR_OVER_TIME = pd.DataFrame(
+                    [BFORCE_SHEAR(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)])
+            else:
+                # BFORCE_OVER_TIME = BFORCE_OVER_TIME.append(step_bforce, ignore_index=True) # deprecated
+                BFORCE_OVER_TIME = pd.concat([BFORCE_OVER_TIME, step_bforce], ignore_index=True)
+                # BFORCE_SHEAR_OVER_TIME = BFORCE_SHEAR_OVER_TIME.append(step_bforce_shear, ignore_index=True) # deprecated
+                BFORCE_SHEAR_OVER_TIME = pd.concat([BFORCE_SHEAR_OVER_TIME, step_bforce_shear], ignore_index=True)
+            counter += 1
+    if not is_ensemble:
+        print()
+        print("============================")
+        print("BOUNDARY POSITIONS OVER TIME")
+        print(BPOS_OVER_TIME)
+        print()
+        print("============================")
+        print("BOUNDARY FORCES OVER TIME")
+        print(BFORCE_OVER_TIME)
+        print()
+        print("============================")
+        print("BOUNDARY SHEAR FORCES OVER TIME")
+        print(BFORCE_SHEAR_OVER_TIME)
+        print()
+        print("============================")
+        print("POISSON RATIO OVER TIME")
+        print(POISSON_RATIO_OVER_TIME)
+        print()
+        print("============================")
+        print("STRAIN OVER TIME")
+        print(OSCILLATORY_STRAIN_OVER_TIME)
+        print()
+    # Saving pickle
+    if SAVE_PICKLE:
+        file_name = f'output_data_{idx}.pickle'
+        file_path = RES_PATH / file_name
+        with open(str(file_path), 'wb') as file:
+            pickle.dump({'BPOS_OVER_TIME': BPOS_OVER_TIME,
+                         'BFORCE_OVER_TIME': BFORCE_OVER_TIME,
+                         'BFORCE_SHEAR_OVER_TIME': BFORCE_SHEAR_OVER_TIME,
+                         'POISSON_RATIO_OVER_TIME': POISSON_RATIO_OVER_TIME,
+                         'OSCILLATORY_STRAIN_OVER_TIME': OSCILLATORY_STRAIN_OVER_TIME,
+                         'MODEL_CONFIG': MODEL_CONFIG},
+                        file, protocol=pickle.HIGHEST_PROTOCOL)
+
+            print('Results successfully saved to {0}'.format(file_path))
+    # Plotting
+    if SHOW_PLOTS and not is_ensemble:
+        MODEL_CONFIG.plot_all(
+            bpos_over_time=BPOS_OVER_TIME,
+            bforce_over_time=BFORCE_OVER_TIME,
+            bforce_shear_over_time=BFORCE_SHEAR_OVER_TIME,
+            poisson_ratio_over_time=POISSON_RATIO_OVER_TIME,
+            show=True,
+        )
+        if OSCILLATORY_SHEAR_ASSAY:
+            MODEL_CONFIG.plot_oscillatory_shear_scatter(
+                oscillatory_strain_over_time=OSCILLATORY_STRAIN_OVER_TIME,
+                bforce_shear_over_time=BFORCE_SHEAR_OVER_TIME,
+                steps=STEPS,
+                show=True,
+            )
 
 # Deal with logs
 if ENSEMBLE:
