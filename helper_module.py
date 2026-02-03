@@ -258,6 +258,7 @@ class ModelParameterConfig:
         init_cell_reaction_rates: list = None,
         # Oscillatory assay
         oscillatory_shear_assay: bool = None,
+        max_strain: float = None,
         oscillatory_amplitude: float = None,
         oscillatory_freq: float = None,
         oscillatory_w: float = None,
@@ -347,6 +348,7 @@ class ModelParameterConfig:
         self.INIT_CELL_PRODUCTION_RATES = init_cell_production_rates
         self.INIT_CELL_REACTION_RATES = init_cell_reaction_rates
         self.OSCILLATORY_SHEAR_ASSAY = oscillatory_shear_assay
+        self.MAX_STRAIN = max_strain
         self.OSCILLATORY_AMPLITUDE = oscillatory_amplitude
         self.OSCILLATORY_FREQ = oscillatory_freq
         self.OSCILLATORY_W = oscillatory_w
@@ -496,43 +498,76 @@ class ModelParameterConfig:
             plt.show()
         return fig
 
-    def plot_oscillatory_shear_scatter(self, oscillatory_strain_over_time, bforce_shear_over_time, steps, show=True):
+    def plot_oscillatory_shear_scatter(
+        self,
+        oscillatory_strain_over_time,
+        bforce_shear_over_time,
+        max_strain=None,
+        show=True,
+    ):
         if oscillatory_strain_over_time is None or bforce_shear_over_time is None:
             return None
-        colors = np.arange(0, steps + 1, 1).tolist()
-        fig2 = plt.figure()
-        plt.scatter(
-            oscillatory_strain_over_time["strain"].abs(),
-            bforce_shear_over_time["fypos_x"].abs(),
-            marker="o",
-            c=colors,
-            alpha=0.3,
-            cmap="viridis",
-        )
-        plt.xlabel("strain")
-        plt.ylabel("shear force")
+        strain_series = oscillatory_strain_over_time["strain"]
+        if max_strain not in (None, 0):
+            strain_series = strain_series / max_strain
 
-        fig3 = plt.figure()
-        plt.scatter(
-            oscillatory_strain_over_time["strain"].abs(),
-            bforce_shear_over_time["fypos_x"],
+        force_series = bforce_shear_over_time["fypos_x"]
+        strain_abs = strain_series.abs()
+        force_abs = force_series.abs()
+
+        # Use the actual number of saved samples (data length), not the total sim steps.
+        n_samples = len(strain_series)
+        sample_idx = np.arange(0, n_samples, 1)
+        colors = sample_idx.tolist()
+
+        fig2, ax2 = plt.subplots()
+        sc2 = ax2.scatter(
+            strain_abs,
+            force_abs,
             marker="o",
             c=colors,
             alpha=0.3,
             cmap="viridis",
         )
-        plt.xlabel("strain")
-        plt.ylabel("shear force")
+        ax2.set_xlabel("strain")
+        ax2.set_ylabel("shear force")
+        cbar2 = fig2.colorbar(sc2, ax=ax2)
+        cbar2.set_label("time (sample index)")
+        fig2.tight_layout()
+
+        fig3, ax3 = plt.subplots()
+        sc3 = ax3.scatter(
+            strain_abs,
+            force_series,
+            marker="o",
+            c=colors,
+            alpha=0.3,
+            cmap="viridis",
+        )
+        ax3.set_xlabel("strain")
+        ax3.set_ylabel("shear force")
+        cbar3 = fig3.colorbar(sc3, ax=ax3)
+        cbar3.set_label("time (sample index)")
+        fig3.tight_layout()
 
         fig4, ax41 = plt.subplots()
         ax42 = ax41.twinx()
-        ax41.plot(colors, oscillatory_strain_over_time["strain"], "g-")
-        ax42.plot(colors, bforce_shear_over_time["fypos_x"], "b-")
+        ax41.plot(sample_idx, strain_series, "g-", label="strain")
+        ax42.plot(sample_idx, force_series, "b-", label="shear force")
 
-        ax41.set_xlabel("steps")
+        ax41.set_xlabel("samples")
         ax41.set_ylabel("strain", color="g")
         ax42.set_ylabel("shear force", color="b")
-        ax42.set_ylim(-35, 35)
+
+        force_min = np.nanmin(force_series)
+        force_max = np.nanmax(force_series)
+        pad = (force_max - force_min) * 0.05 if force_max != force_min else 1.0
+        ax42.set_ylim(force_min - pad, force_max + pad)
+
+        lines_1, labels_1 = ax41.get_legend_handles_labels()
+        lines_2, labels_2 = ax42.get_legend_handles_labels()
+        ax41.legend(lines_1 + lines_2, labels_1 + labels_2, loc="best")
+        fig4.tight_layout()
 
         if show:
             plt.show()
@@ -616,6 +651,7 @@ def build_model_config_from_namespace(ns: dict) -> ModelParameterConfig:
         init_cell_production_rates=ns.get("INIT_CELL_PRODUCTION_RATES"),
         init_cell_reaction_rates=ns.get("INIT_CELL_REACTION_RATES"),
         oscillatory_shear_assay=ns.get("OSCILLATORY_SHEAR_ASSAY"),
+        max_strain=ns.get("MAX_STRAIN"),
         oscillatory_amplitude=ns.get("OSCILLATORY_AMPLITUDE"),
         oscillatory_freq=ns.get("OSCILLATORY_FREQ"),
         oscillatory_w=ns.get("OSCILLATORY_W"),

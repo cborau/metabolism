@@ -121,7 +121,8 @@ print("MAX_SEARCH_RADIUS for CELLS [units]: ", MAX_SEARCH_RADIUS_CELL_ECM_INTERA
 MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION = 2 * ECM_ECM_EQUILIBRIUM_DISTANCE # this radius is used to check if cells interact with each other
 
 OSCILLATORY_SHEAR_ASSAY = True  # if True, BOUNDARY_DISP_RATES_PARALLEL options are overrun but used to make the boundaries oscillate in their corresponding planes following a sin() function
-OSCILLATORY_AMPLITUDE = 0.25 * (BOUNDARY_COORDS[2] - BOUNDARY_COORDS[3])  # range [0-1] * domain size in the direction of oscillation
+MAX_STRAIN = 0.25  # maximum strain applied during oscillatory shear assay (used to compute OSCILLATORY_AMPLITUDE)
+OSCILLATORY_AMPLITUDE = MAX_STRAIN * (BOUNDARY_COORDS[2] - BOUNDARY_COORDS[3])  # range [0-1] * domain size in the direction of oscillation
 OSCILLATORY_FREQ = 0.05  # strain oscillation frequency [time^-1]
 OSCILLATORY_W = 2 * math.pi * OSCILLATORY_FREQ * TIME_STEP
 # Compute expected boundary positions after motion, WARNING: make sure the direction matches with OSCILLATORY_AMPLITUDE definition
@@ -2010,7 +2011,7 @@ def manageLogs(steps, is_ensemble, idx):
             MODEL_CONFIG.plot_oscillatory_shear_scatter(
                 oscillatory_strain_over_time=OSCILLATORY_STRAIN_OVER_TIME,
                 bforce_shear_over_time=BFORCE_SHEAR_OVER_TIME,
-                steps=STEPS,
+                max_strain=MAX_STRAIN,
                 show=True,
             )
 

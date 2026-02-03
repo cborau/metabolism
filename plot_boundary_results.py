@@ -72,7 +72,7 @@ def plot_results(data, show=True):
         MODEL_CONFIG.plot_oscillatory_shear_scatter(
             oscillatory_strain_over_time=oscillatory_strain_over_time,
             bforce_shear_over_time=bforce_shear_over_time,
-            steps=MODEL_CONFIG.STEPS,
+            max_strain=MODEL_CONFIG.MAX_STRAIN,
             show=show,
         )
 
