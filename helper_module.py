@@ -76,16 +76,16 @@ def load_fibre_network(
     connectivity = None
 
     if os.path.exists(file_name):
-        print(f'Loading network from {file_name}')
+        # print(f'Loading network from {file_name}')
         with open(file_name, 'rb') as f:
             data = pickle.load(f)
             nodes = data['node_coords']
             connectivity = data['connectivity']
             network_parameters = data.get('network_parameters')
         if network_parameters:
-            print('Loaded network parameters:')
-            for key, value in network_parameters.items():
-                print(f'  {key}: {value}')
+            # print('Loaded network parameters:')
+            # for key, value in network_parameters.items():
+            #     print(f'  {key}: {value}')
 
             domain_lx = abs(boundary_coords[1] - boundary_coords[0])
             domain_ly = abs(boundary_coords[3] - boundary_coords[2])
@@ -118,7 +118,7 @@ def load_fibre_network(
                 fibre_segment_equilibrium_distance = expected_edge_length
         else:
             print('WARNING: network_parameters not found in network_3d.pkl. Skipping compatibility checks.')
-        print(f'Network loaded: {nodes.shape[0]} nodes, {len(connectivity)} fibers')
+        # print(f'Network loaded: {nodes.shape[0]} nodes, {len(connectivity)} fibers')
     else:
         print(f"ERROR: file {file_name} containing network nodes and connectivity was not found")
         critical_error = True
@@ -152,6 +152,7 @@ def load_fibre_network(
         critical_error = True
 
     return nodes, connectivity, fibre_segment_equilibrium_distance, critical_error
+
 
 #Helper functions for agent initialization
 # +--------------------------------------------------------------------+
@@ -355,7 +356,8 @@ class ModelParameterConfig:
         oscillatory_amplitude: float = None,
         oscillatory_freq: float = None,
         oscillatory_w: float = None,
-        max_expected_boundary_pos_oscillatory: float = None,
+        min_expected_boundary_pos: float = None,
+        max_expected_boundary_pos: float = None,
         # Vascularization
         include_vascularization: bool = None,
         init_vascularization_concentration_vals: list = None,
@@ -445,7 +447,8 @@ class ModelParameterConfig:
         self.OSCILLATORY_AMPLITUDE = oscillatory_amplitude
         self.OSCILLATORY_FREQ = oscillatory_freq
         self.OSCILLATORY_W = oscillatory_w
-        self.MAX_EXPECTED_BOUNDARY_POS_OSCILLATORY = max_expected_boundary_pos_oscillatory
+        self.MIN_EXPECTED_BOUNDARY_POS = min_expected_boundary_pos
+        self.MAX_EXPECTED_BOUNDARY_POS = max_expected_boundary_pos
         self.INCLUDE_VASCULARIZATION = include_vascularization
         self.INIT_VASCULARIZATION_CONCENTRATION_VALS = init_vascularization_concentration_vals
         self.SAVE_PICKLE = save_pickle
@@ -460,6 +463,7 @@ class ModelParameterConfig:
             print(f"{attribute}: {value}")
 
     def print_summary(self):
+        print()
         print("=== ModelParameterConfig Summary ===")
         print(f"STEPS: {self.STEPS} | TIME_STEP: {self.TIME_STEP}")
         print(f"ECM_AGENTS_PER_DIR: {self.ECM_AGENTS_PER_DIR}")
@@ -468,14 +472,105 @@ class ModelParameterConfig:
         print(f"INCLUDE_FIBRE_NETWORK: {self.INCLUDE_FIBRE_NETWORK}")
         print(f"MOVING_BOUNDARIES: {self.MOVING_BOUNDARIES}")
 
+    def print_configuration_summary(self, n_nodes=None, n_fibres=None):
+        domain_lx = abs(self.BOUNDARY_COORDS[1] - self.BOUNDARY_COORDS[0])
+        domain_ly = abs(self.BOUNDARY_COORDS[3] - self.BOUNDARY_COORDS[2])
+        domain_lz = abs(self.BOUNDARY_COORDS[5] - self.BOUNDARY_COORDS[4])
+
+        print("=========================================")
+        print("====== Model Configuration Summary ======")
+        print("=========================================")
+        print("Time step: {0} | Steps: {1}".format(self.TIME_STEP, self.STEPS))
+        print("Save every N steps: {0}".format(self.SAVE_EVERY_N_STEPS))
+        print("Save data to file: {0}".format(self.SAVE_DATA_TO_FILE))
+        print("Show plots: {0}".format(self.SHOW_PLOTS))
+        print(
+            "Domain size (LX, LY, LZ): {0}, {1}, {2}".format(
+                domain_lx, domain_ly, domain_lz
+            )
+        )
+        print()
+        self.print_boundary_config()
+        self.print_agent_config(n_nodes, n_fibres)
+
+        print("=========================================\n")
+        print("MODEL RUNNING...\n")
+    def print_agent_config(self, n_nodes=None, n_fibres=None):
+        print("=========== Agent Configuration =========")
+        print("== ECM: ")
+        print("ECM agents per dir: {0}".format(tuple(self.ECM_AGENTS_PER_DIR)))
+        print("ECM population size: {0}".format(self.ECM_POPULATION_SIZE))
+        print("ECM voxel volume: {0}".format(self.ECM_VOXEL_VOLUME)) 
+        total_number_of_agents = self.ECM_POPULATION_SIZE
+        if self.INCLUDE_DIFFUSION:
+            coeff_text = (
+                "unknown" if self.DIFFUSION_COEFF_MULTI is None else self.DIFFUSION_COEFF_MULTI
+            )
+            unstable_text = (
+                "unknown" if self.UNSTABLE_DIFFUSION is None else self.UNSTABLE_DIFFUSION
+            )
+            print(
+                "Diffusion: enabled | Species: {0} | Coefficients: {1} | Unstable: {2}".format(
+                    self.N_SPECIES,
+                    coeff_text,
+                    unstable_text,
+                )
+            )
+        else:
+            print("Diffusion: disabled")
+        print()
+        if self.INCLUDE_FIBRE_NETWORK:
+            total_number_of_agents += n_nodes if n_nodes is not None else 0
+            print("== FIBRE NETWORK: ")
+            nodes_text = "unknown" if n_nodes is None else str(n_nodes)
+            fibres_text = "unknown" if n_fibres is None else str(n_fibres)
+            print(
+                "Fibre network: enabled | Nodes: {0} | Fibres: {1} | Segment equilibrium: {2}".format(
+                    nodes_text,
+                    fibres_text,
+                    self.FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE,
+                )
+            )
+        else:
+            print("Fibre network: disabled")
+        print()
+
+        if self.INCLUDE_CELLS:
+            total_number_of_agents += self.N_CELLS if self.N_CELLS is not None else 0
+            print("== CELLS: ")
+            print("Cells: enabled")
+            print(f" - N_CELLS: {self.N_CELLS}")
+            print(f" - Radius: {self.CELL_RADIUS}")
+            print(f" - Reference speed: {self.CELL_SPEED_REF}")
+            print(
+            " - Search radius (cell-ECM, cell-cell): {0}, {1}".format(
+                self.MAX_SEARCH_RADIUS_CELL_ECM_INTERACTION,
+                self.MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION,
+            )
+        )
+        else:
+            print("Cells: disabled")
+        print()
+        print(f"TOTAL NUMBER OF AGENTS: {total_number_of_agents}")
+
     def print_boundary_config(self):
-        print("=== Boundary Configuration ===")
+        print("========= Boundary Configuration ========")
         print(f"BOUNDARY_COORDS: {self.BOUNDARY_COORDS}")
-        print(f"BOUNDARY_DISP_RATES: {self.BOUNDARY_DISP_RATES}")
-        print(f"BOUNDARY_DISP_RATES_PARALLEL: {self.BOUNDARY_DISP_RATES_PARALLEL}")
         print(f"CLAMP_AGENT_TOUCHING_BOUNDARY: {self.CLAMP_AGENT_TOUCHING_BOUNDARY}")
         print(f"ALLOW_BOUNDARY_ELASTIC_MOVEMENT: {self.ALLOW_BOUNDARY_ELASTIC_MOVEMENT}")
-
+        if self.MOVING_BOUNDARIES:
+            print(f"BOUNDARY_DISP_RATES: {self.BOUNDARY_DISP_RATES}")
+            print(f"BOUNDARY_DISP_RATES_PARALLEL: {self.BOUNDARY_DISP_RATES_PARALLEL}")
+            print("Moving boundaries: {0}".format(self.MOVING_BOUNDARIES))
+            print(
+                "Max expected boundary position (min, max): {0}, {1}".format(
+                    self.MIN_EXPECTED_BOUNDARY_POS,
+                    self.MAX_EXPECTED_BOUNDARY_POS,
+                )
+            )
+            print("Oscillatory shear assay: {0}".format(self.OSCILLATORY_SHEAR_ASSAY))
+        print("\n")    
+         
     def plot_boundary_positions(self, bpos_over_time, ax=None, show=True):
         if bpos_over_time is None:
             return None
@@ -753,7 +848,8 @@ def build_model_config_from_namespace(ns: dict) -> ModelParameterConfig:
         oscillatory_amplitude=ns.get("OSCILLATORY_AMPLITUDE"),
         oscillatory_freq=ns.get("OSCILLATORY_FREQ"),
         oscillatory_w=ns.get("OSCILLATORY_W"),
-        max_expected_boundary_pos_oscillatory=ns.get("MAX_EXPECTED_BOUNDARY_POS_OSCILLATORY"),
+        min_expected_boundary_pos=ns.get("MIN_EXPECTED_BOUNDARY_POS"),
+        max_expected_boundary_pos=ns.get("MAX_EXPECTED_BOUNDARY_POS"),
         include_vascularization=ns.get("INCLUDE_VASCULARIZATION"),
         init_vascularization_concentration_vals=ns.get("INIT_VASCULARIZATION_CONCENTRATION_VALS"),
         save_pickle=ns.get("SAVE_PICKLE"),

@@ -92,10 +92,8 @@ diff_z = abs(BOUNDARY_COORDS[4] - BOUNDARY_COORDS[5])
 
 # Check if the differences are equal
 if diff_x == diff_y == diff_z:
-    ECM_AGENTS_PER_DIR = [N, N, N]
-    print("The domain is cubical.")    
+    ECM_AGENTS_PER_DIR = [N, N, N] # cubical domain
 else:
-    print("The domain is not cubical.")
     min_length = min(diff_x, diff_y, diff_z)
     dist_agents = min_length / (N - 1)
     ECM_AGENTS_PER_DIR = [int(diff_x / dist_agents) + 1, int(diff_y / dist_agents) + 1, int(diff_z / dist_agents) + 1]
@@ -109,19 +107,13 @@ L0_x = abs(BOUNDARY_COORDS[0] - BOUNDARY_COORDS[1])
 L0_y = abs(BOUNDARY_COORDS[2] - BOUNDARY_COORDS[3])
 L0_z = abs(BOUNDARY_COORDS[4] - BOUNDARY_COORDS[5])
 
-print('DOMAIN SIZE: {0},{1},{2}'.format(L0_x,L0_y,L0_z))
-print('ECM_AGENTS_PER_DIR: {0},{1},{2}'.format(ECM_AGENTS_PER_DIR[0], ECM_AGENTS_PER_DIR[1], ECM_AGENTS_PER_DIR[2]))
 ECM_POPULATION_SIZE = ECM_AGENTS_PER_DIR[0] * ECM_AGENTS_PER_DIR[1] * ECM_AGENTS_PER_DIR[2]
-print('Total number of agents: {0}'.format(ECM_POPULATION_SIZE))
 ECM_ECM_EQUILIBRIUM_DISTANCE = L0_x / (ECM_AGENTS_PER_DIR[0] - 1) # in units, all agents are evenly spaced
-print("ECM_ECM_EQUILIBRIUM_DISTANCE [units]: ", ECM_ECM_EQUILIBRIUM_DISTANCE)
 ECM_BOUNDARY_INTERACTION_RADIUS = 0.05
 ECM_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.0
 ECM_VOXEL_VOLUME = (L0_x / (ECM_AGENTS_PER_DIR[0] - 1)) * (L0_y / (ECM_AGENTS_PER_DIR[1] - 1)) * (L0_z / (ECM_AGENTS_PER_DIR[2] - 1))
-print("ECM_VOXEL_VOLUME [units^3]: ", ECM_VOXEL_VOLUME)
 MAX_SEARCH_RADIUS_VASCULARIZATION = ECM_ECM_EQUILIBRIUM_DISTANCE  # this strongly affects the number of bins and therefore the memory allocated for simulations (more bins -> more memory -> faster (in theory))
 MAX_SEARCH_RADIUS_CELL_ECM_INTERACTION = ECM_ECM_EQUILIBRIUM_DISTANCE # this radius is used to find ECM agents
-print("MAX_SEARCH_RADIUS for CELLS [units]: ", MAX_SEARCH_RADIUS_CELL_ECM_INTERACTION)
 MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION = 2 * ECM_ECM_EQUILIBRIUM_DISTANCE # this radius is used to check if cells interact with each other
 
 OSCILLATORY_SHEAR_ASSAY = False  # if True, BOUNDARY_DISP_RATES_PARALLEL options are overrun but used to make the boundaries oscillate in their corresponding planes following a sin() function
@@ -218,14 +210,9 @@ if not OSCILLATORY_SHEAR_ASSAY:
         STEPS,
         TIME_STEP,
     )
-    print("Moved corners: ", moved_corners)
 else:
     MIN_EXPECTED_BOUNDARY_POS = -MAX_EXPECTED_BOUNDARY_POS_OSCILLATORY
     MAX_EXPECTED_BOUNDARY_POS = MAX_EXPECTED_BOUNDARY_POS_OSCILLATORY
-
-print("Max expected boundary position: ", MAX_EXPECTED_BOUNDARY_POS)
-print("Min expected boundary position: ", MIN_EXPECTED_BOUNDARY_POS)
-
 
 # Dataframe initialization data storage
 # ----------------------------------------------------------------------
@@ -269,6 +256,11 @@ if INCLUDE_FIBRE_NETWORK:
         NODE_COORDS = nodes
         INITIAL_NETWORK_CONNECTIVITY = connectivity
 
+    if nodes is not None and connectivity is not None:
+        N_FIBRES = len(connectivity)
+    else:
+        N_FIBRES = None
+
 UNSTABLE_DIFFUSION = False
 # Check diffusion parameters
 if INCLUDE_DIFFUSION:
@@ -280,7 +272,7 @@ if INCLUDE_DIFFUSION:
     dx = L0_x / (ECM_AGENTS_PER_DIR[0] - 1)
     for i in range(N_SPECIES):
         Fi_x = 3 * (DIFFUSION_COEFF_MULTI[i] * TIME_STEP / (dx * dx))  # this value should be < 0.5
-        print('Fi_x value: {0} for species {1}'.format(Fi_x, i + 1))
+        # print('Fi_x value: {0} for species {1}'.format(Fi_x, i + 1))
         if Fi_x > 0.5:
             print(
                 'WARNING: diffusion problem is ill conditioned (Fi_x should be < 0.5), check parameters and consider decreasing time step\nSemi-implicit diffusion will be used instead')
@@ -288,7 +280,7 @@ if INCLUDE_DIFFUSION:
     dy = L0_y / (ECM_AGENTS_PER_DIR[1] - 1)
     for i in range(N_SPECIES):
         Fi_y = 3 * (DIFFUSION_COEFF_MULTI[i] * TIME_STEP / (dy * dy))  # this value should be < 0.5
-        print('Fi_y value: {0} for species {1}'.format(Fi_y, i + 1))
+        # print('Fi_y value: {0} for species {1}'.format(Fi_y, i + 1))
         if Fi_y > 0.5:
             print(
                 'WARNING: diffusion problem is ill conditioned (Fi_y should be < 0.5), check parameters and consider decreasing time step\nSemi-implicit diffusion will be used instead')
@@ -296,7 +288,7 @@ if INCLUDE_DIFFUSION:
     dz = L0_z / (ECM_AGENTS_PER_DIR[2] - 1)
     for i in range(N_SPECIES):
         Fi_z = 3 * (DIFFUSION_COEFF_MULTI[i] * TIME_STEP / (dz * dz))  # this value should be < 0.5
-        print('Fi_z value: {0} for species {1}'.format(Fi_z, i + 1))
+        # print('Fi_z value: {0} for species {1}'.format(Fi_z, i + 1))
         if Fi_z > 0.5:
             print(
                 'WARNING: diffusion problem is ill conditioned (Fi_z should be < 0.5), check parameters and consider decreasing time step\nSemi-implicit diffusion will be used instead')
@@ -307,11 +299,15 @@ if INCLUDE_CELLS:
         print('MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION: {0} must be higher than 2 * CELL_RADIUS: 2 * {1}'.format(MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION, CELL_RADIUS))
         critical_error = True
 
+
 if critical_error:
     quit()
 
 MODEL_CONFIG = build_model_config_from_namespace(globals())
-
+MODEL_CONFIG.print_configuration_summary(
+    n_nodes=locals().get('N_NODES'),
+    n_fibres=locals().get('N_FIBRES'),
+)
 # +====================================================================+
 # | FLAMEGPU2 IMPLEMENTATION                                           |
 # +====================================================================+
@@ -1905,7 +1901,8 @@ else:
 if pyflamegpu.VISUALISATION and VISUALISATION and not ENSEMBLE:
     vis.join() # join the visualisation thread and stops the visualisation closing after the simulation finishes
 
-print("--- EXECUTION TIME: %s seconds ---" % (time.time() - start_time))
+EXECUTION_TIME = time.time() - start_time
+print("--- EXECUTION TIME: %s seconds ---" % EXECUTION_TIME)
 
 incL_dir1 = (BPOS_OVER_TIME.iloc[:, POISSON_DIRS[0] * 2] - BPOS_OVER_TIME.iloc[:, POISSON_DIRS[0] * 2 + 1]) - (
         BPOS_OVER_TIME.iloc[0, POISSON_DIRS[0] * 2] - BPOS_OVER_TIME.iloc[0, POISSON_DIRS[0] * 2 + 1])
@@ -1916,7 +1913,7 @@ POISSON_RATIO_OVER_TIME = -1 * incL_dir1 / incL_dir2
 
 
 def manageLogs(steps, is_ensemble, idx):
-    global SAVE_EVERY_N_STEPS, SAVE_PICKLE, SHOW_PLOTS, RES_PATH, MODEL_CONFIG
+    global SAVE_EVERY_N_STEPS, SAVE_PICKLE, SHOW_PLOTS, RES_PATH, MODEL_CONFIG, EXECUTION_TIME
     global BPOS_OVER_TIME, BFORCE_OVER_TIME, BFORCE_SHEAR_OVER_TIME, POISSON_RATIO_OVER_TIME, OSCILLATORY_STRAIN_OVER_TIME
     ecm_agent_counts = [None] * len(steps)
     counter = 0
@@ -2001,7 +1998,8 @@ def manageLogs(steps, is_ensemble, idx):
                          'BFORCE_SHEAR_OVER_TIME': BFORCE_SHEAR_OVER_TIME,
                          'POISSON_RATIO_OVER_TIME': POISSON_RATIO_OVER_TIME,
                          'OSCILLATORY_STRAIN_OVER_TIME': OSCILLATORY_STRAIN_OVER_TIME,
-                         'MODEL_CONFIG': MODEL_CONFIG},
+                         'MODEL_CONFIG': MODEL_CONFIG,
+                         'EXECUTION_TIME': EXECUTION_TIME},
                         file, protocol=pickle.HIGHEST_PROTOCOL)
 
             print('Results successfully saved to {0}'.format(file_path))
