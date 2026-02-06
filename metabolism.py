@@ -16,13 +16,13 @@ import random
 import os
 import pickle
 import matplotlib.pyplot as plt
-from helper_module import compute_expected_boundary_pos_from_corners, getRandomVectors3D, build_model_config_from_namespace
+from helper_module import compute_expected_boundary_pos_from_corners, getRandomVectors3D, build_model_config_from_namespace, load_fibre_network
 
 
 start_time = time.time()
 
 # +====================================================================+
-# | GLOBAL PARAMETERS                                                  |
+# | GLOBAL SIMULATION PARAMETERS                                       |
 # +====================================================================+
 # Set whether to run single model or ensemble, agent population size, and simulation steps 
 ENSEMBLE = False
@@ -31,9 +31,9 @@ VISUALISATION = False  # Change to false if pyflamegpu has not been built with v
 DEBUG_PRINTING = False
 PAUSE_EVERY_STEP = False  # If True, the visualization stops every step until P is pressed
 SAVE_PICKLE = True  # If True, dumps model configuration into a pickle file for post-processing
-SHOW_PLOTS = True  # Show plots at the end of the simulation
+SHOW_PLOTS = False  # Show plots at the end of the simulation
 SAVE_DATA_TO_FILE = True  # If true, agent data is exported to .vtk file every SAVE_EVERY_N_STEPS steps
-SAVE_EVERY_N_STEPS = 50# Affects both the .vtk files and the Dataframes storing boundary data
+SAVE_EVERY_N_STEPS = 5 # Affects both the .vtk files and the Dataframes storing boundary data
 
 CURR_PATH = pathlib.Path().absolute()
 RES_PATH = CURR_PATH / 'result_files'
@@ -43,16 +43,20 @@ EPSILON = 0.0000000001
 print("Executing in ", CURR_PATH)
 # Minimum number of agents per direction (x,y,z). 
 # If domain is not cubical, N is asigned to the shorter dimension and more agents are added to the longer ones
-# +--------------------------------------------------------------------+
+# ----------------------------------------------------------------------
 N = 21
 
 # Time simulation parameters
-# +--------------------------------------------------------------------+
+# ----------------------------------------------------------------------
 TIME_STEP = 0.01# time. WARNING: diffusion and cell migration events might need different scales
-STEPS = 5000
+STEPS = 50
+
+# +====================================================================+
+# | BOUNDARY CONDITIONS                                                |
+# +====================================================================+
 
 # Boundary interactions and mechanical parameters
-# +--------------------------------------------------------------------+
+# ----------------------------------------------------------------------
 ECM_K_ELAST = 0.2  # [N/units/kg]
 ECM_D_DUMPING = 0.04  # [N*s/units/kg]
 ECM_ETA = 1  # [1/time]
@@ -61,7 +65,7 @@ ECM_ETA = 1  # [1/time]
 BOUNDARY_COORDS = [100.0, -100.0, 100.0, -100.0, 100.0, -100.0]# microdevice dimensions in um
 #BOUNDARY_COORDS = [coord / 1000.0 for coord in BOUNDARY_COORDS] # in mm
 BOUNDARY_DISP_RATES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]# perpendicular to each surface (+X,-X,+Y,-Y,+Z,-Z) [units/time]
-BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]# parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/time]
+BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]# parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/time]
 
 POISSON_DIRS = [0, 1]  # 0: xdir, 1:ydir, 2:zdir. poisson_ratio ~= -incL(dir1)/incL(dir2) dir2 is the direction in which the load is applied
 ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [0, 0, 0, 0, 0, 0]  # [bool]
@@ -70,17 +74,17 @@ BOUNDARY_STIFFNESS_VALUE = 10.0  # N/units
 BOUNDARY_DUMPING_VALUE = 5.0
 BOUNDARY_STIFFNESS = [BOUNDARY_STIFFNESS_VALUE * x for x in RELATIVE_BOUNDARY_STIFFNESS]
 BOUNDARY_DUMPING = [BOUNDARY_DUMPING_VALUE * x for x in RELATIVE_BOUNDARY_STIFFNESS]
-CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 1]# +X,-X,+Y,-Y,+Z,-Z [bool] - shear assay
-#CLAMP_AGENT_TOUCHING_BOUNDARY = [1, 1, 1, 1, 1, 1]  # +X,-X,+Y,-Y,+Z,-Z [bool]
+#CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]# +X,-X,+Y,-Y,+Z,-Z [bool] - shear assay
+CLAMP_AGENT_TOUCHING_BOUNDARY = [1, 1, 1, 1, 1, 1]# +X,-X,+Y,-Y,+Z,-Z [bool]
 ALLOW_AGENT_SLIDING = [0, 0, 0, 0, 0, 0]# +X,-X,+Y,-Y,+Z,-Z [bool]
-
 
 if any(rate != 0.0 for rate in BOUNDARY_DISP_RATES_PARALLEL) or any(rate != 0.0 for rate in BOUNDARY_DISP_RATES):
     MOVING_BOUNDARIES = True
 else:   
     MOVING_BOUNDARIES = False
-# Adjusting number of agents if domain is not cubical
-# +--------------------------------------------------------------------+
+
+# Adjust number of agents if domain is not cubical
+# ----------------------------------------------------------------------
 # Calculate the differences between opposite pairs along each axis
 diff_x = abs(BOUNDARY_COORDS[0] - BOUNDARY_COORDS[1])
 diff_y = abs(BOUNDARY_COORDS[2] - BOUNDARY_COORDS[3])
@@ -120,7 +124,7 @@ MAX_SEARCH_RADIUS_CELL_ECM_INTERACTION = ECM_ECM_EQUILIBRIUM_DISTANCE # this rad
 print("MAX_SEARCH_RADIUS for CELLS [units]: ", MAX_SEARCH_RADIUS_CELL_ECM_INTERACTION)
 MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION = 2 * ECM_ECM_EQUILIBRIUM_DISTANCE # this radius is used to check if cells interact with each other
 
-OSCILLATORY_SHEAR_ASSAY = True  # if True, BOUNDARY_DISP_RATES_PARALLEL options are overrun but used to make the boundaries oscillate in their corresponding planes following a sin() function
+OSCILLATORY_SHEAR_ASSAY = False  # if True, BOUNDARY_DISP_RATES_PARALLEL options are overrun but used to make the boundaries oscillate in their corresponding planes following a sin() function
 MAX_STRAIN = 0.25  # maximum strain applied during oscillatory shear assay (used to compute OSCILLATORY_AMPLITUDE)
 OSCILLATORY_AMPLITUDE = MAX_STRAIN * (BOUNDARY_COORDS[2] - BOUNDARY_COORDS[3])  # range [0-1] * domain size in the direction of oscillation
 OSCILLATORY_FREQ = 0.05  # strain oscillation frequency [time^-1]
@@ -130,13 +134,13 @@ MAX_EXPECTED_BOUNDARY_POS_OSCILLATORY = 0.25 * (BOUNDARY_COORDS[2] - BOUNDARY_CO
 
 # Fitting parameters for the fiber strain-stiffening phenomena
 # Ref: https://bio.physik.fau.de/publications/Steinwachs%20Nat%20Meth%202016.pdf
-# +--------------------------------------------------------------------+
+# ----------------------------------------------------------------------
 BUCKLING_COEFF_D0 = 0.1
 STRAIN_STIFFENING_COEFF_DS = 0.25
 CRITICAL_STRAIN = 0.1
 
 # Parallel disp rate values are overrun in oscillatory assays
-# +--------------------------------------------------------------------+
+# ----------------------------------------------------------------------
 if OSCILLATORY_SHEAR_ASSAY:
     for d in range(12):
         if abs(BOUNDARY_DISP_RATES_PARALLEL[d]) > 0.0:
@@ -144,39 +148,23 @@ if OSCILLATORY_SHEAR_ASSAY:
                 OSCILLATORY_W * 0.0) * OSCILLATORY_W / TIME_STEP  # cos(w*t)*w is used because the slope of the sin(w*t) function is needed. Expressed in units/sec
 
 
-# Network parameters
-# +--------------------------------------------------------------------+
+# +====================================================================+
+# | FIBRE NETWORK PARAMETERS                                           |
+# +====================================================================+
 INCLUDE_FIBRE_NETWORK = True
-
-if INCLUDE_FIBRE_NETWORK:
-    file_name = 'network_3d.pkl'
-    # Check if the file exists
-    if os.path.exists(file_name):
-        print(f'Loading network from {file_name}')
-        # Load from the pickle file
-        with open(file_name, 'rb') as f:
-            data = pickle.load(f)
-            nodes = data['node_coords']
-            connectivity = data['connectivity']
-        print(f'Network loaded: {nodes.shape[0]} nodes, {len(connectivity)} fibers')
-    else:
-        print(f"ERROR: file {file_name} containing network nodes and connectivity was not found")
-    N_NODES = nodes.shape[0]
-    NODE_COORDS = nodes
-    INITIAL_NETWORK_CONNECTIVITY = connectivity
 
 MAX_CONNECTIVITY = 8 # must match hard-coded C++ values
 FIBRE_SEGMENT_K_ELAST = 0.2  # [N/units/kg]
 FIBRE_SEGMENT_D_DUMPING = 0.04  # [N*s/units/kg]
-FIBRE_SEGMENT_MASS = 1.0  # [dimensionless to make K and D mass dependent]
 FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE = 15 # WARNING: must match the value used in network generation
 FIBRE_NODE_BOUNDARY_INTERACTION_RADIUS = 0.05
 FIBRE_NODE_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.0
 MAX_SEARCH_RADIUS_FNODES = FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE / 10.0 # must me smaller than FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE
 
 
-# Diffusion related paramenters
-# +--------------------------------------------------------------------+
+# +====================================================================+
+# | DIFFUSION PARAMETERS                                               |
+# +====================================================================+
 INCLUDE_DIFFUSION = True
 N_SPECIES = 2  # number of diffusing species.WARNING: make sure that the value coincides with the one declared in TODO
 DIFFUSION_COEFF_MULTI = [300.0, 300.0]  # diffusion coefficient in [units^2/s] per specie
@@ -187,8 +175,10 @@ BOUNDARY_CONC_INIT_MULTI = [[50.0,50.0, 50.0, 50.0, 50.0, 50.0],
 BOUNDARY_CONC_FIXED_MULTI = [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                              # concentration boundary conditions at each surface. WARNING: -1.0 means initial condition prevails. Don't use 0.0 as initial condition if that value is not fixed. Use -1.0 instead
                              [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]  # add as many lines as different species
-# Cell agent related paramenters
-# +--------------------------------------------------------------------+
+
+# +====================================================================+
+# | CELL PARAMETERS                                                   |
+# +====================================================================+
 INCLUDE_CELLS = True
 INCLUDE_CELL_ORIENTATION = True
 INCLUDE_CELL_CELL_INTERACTION = False
@@ -217,9 +207,9 @@ INIT_CELL_CONSUMPTION_RATES = [0.001, 0.0]  # consumption rate of each species b
 INIT_CELL_PRODUCTION_RATES = [0.0, 10.0]  # production rate of each species by the CELL agents 
 INIT_CELL_REACTION_RATES = [0.00018, 0.00018]  # metabolic reaction rates of each species by the CELL agents 
 
-# +--------------------------------------------------------------------+
-# Other simulation parameters: TODO: INCLUDE PARALLEL DISP RATES
-# +--------------------------------------------------------------------+
+# +====================================================================+
+# | OTHER DERIVED PARAMETERS AND MODEL CHECKS                          |
+# +====================================================================+
 if not OSCILLATORY_SHEAR_ASSAY:
     MIN_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS, moved_corners = compute_expected_boundary_pos_from_corners(
         BOUNDARY_COORDS,
@@ -238,7 +228,7 @@ print("Min expected boundary position: ", MIN_EXPECTED_BOUNDARY_POS)
 
 
 # Dataframe initialization data storage
-# +--------------------------------------------------------------------+
+# ----------------------------------------------------------------------
 BPOS = make_dataclass("BPOS", [("xpos", float), ("xneg", float), ("ypos", float), ("yneg", float), ("zpos", float),
                                ("zneg", float)])
 # Use a dataframe to store boundary positions over time
@@ -248,7 +238,7 @@ OSOT = make_dataclass("OSOT", [("strain", float)])
 OSCILLATORY_STRAIN_OVER_TIME = pd.DataFrame([OSOT(0)])
 
 # Checking for incompatible conditions
-# +--------------------------------------------------------------------+
+# ----------------------------------------------------------------------
 critical_error = False
 msg_poisson = "WARNING: poisson ratio directions are not well defined or might not make sense due to boundary conditions \n"
 if (BOUNDARY_DISP_RATES[0] != 0.0 or BOUNDARY_DISP_RATES[1] != 0.0) and POISSON_DIRS[1] != 0:
@@ -266,32 +256,18 @@ for i in range(6):
 
 
 if INCLUDE_FIBRE_NETWORK:
-    # Safety check: ensure nodes exist on both faces for at least two axes
-    # (e.g., nodes on +X and -X, and on +Y and -Y).
-    msg_wrong_network_dimensions = ("WARNING: Fibre network nodes do not coincide with boundary faces on at least two axes. "
-            "Check NODE_COORDS vs BOUNDARY_COORDS or regenerate the network.")
-
-    x_max, x_min, y_max, y_min, z_max, z_min = BOUNDARY_COORDS
-    axes_with_both_faces = 0
-
-    has_x_pos = np.any(np.isclose(NODE_COORDS[:, 0], x_max, atol=EPSILON))
-    has_x_neg = np.any(np.isclose(NODE_COORDS[:, 0], x_min, atol=EPSILON))
-    if has_x_pos and has_x_neg:
-        axes_with_both_faces += 1
-
-    has_y_pos = np.any(np.isclose(NODE_COORDS[:, 1], y_max, atol=EPSILON))
-    has_y_neg = np.any(np.isclose(NODE_COORDS[:, 1], y_min, atol=EPSILON))
-    if has_y_pos and has_y_neg:
-        axes_with_both_faces += 1
-
-    has_z_pos = np.any(np.isclose(NODE_COORDS[:, 2], z_max, atol=EPSILON))
-    has_z_neg = np.any(np.isclose(NODE_COORDS[:, 2], z_min, atol=EPSILON))
-    if has_z_pos and has_z_neg:
-        axes_with_both_faces += 1
-
-    if axes_with_both_faces < 2:
-        print(msg_wrong_network_dimensions)
+    nodes, connectivity, FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE, fibre_critical_error = load_fibre_network(
+        file_name='network_3d.pkl',
+        boundary_coords=BOUNDARY_COORDS,
+        epsilon=EPSILON,
+        fibre_segment_equilibrium_distance=FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE,
+    )
+    if fibre_critical_error:
         critical_error = True
+    if nodes is not None and connectivity is not None:
+        N_NODES = nodes.shape[0]
+        NODE_COORDS = nodes
+        INITIAL_NETWORK_CONNECTIVITY = connectivity
 
 UNSTABLE_DIFFUSION = False
 # Check diffusion parameters
@@ -325,7 +301,6 @@ if INCLUDE_DIFFUSION:
             print(
                 'WARNING: diffusion problem is ill conditioned (Fi_z should be < 0.5), check parameters and consider decreasing time step\nSemi-implicit diffusion will be used instead')
             UNSTABLE_DIFFUSION = True
-    critical_error = False # TODO: to bypass diffusion checks for testing purposes. Create variable to do full explicit vs relaxed forward-euler depending on stability
 
 if INCLUDE_CELLS:
     if MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION < (2 * CELL_RADIUS):
@@ -342,6 +317,9 @@ MODEL_CONFIG = build_model_config_from_namespace(globals())
 # +====================================================================+
 
 
+# ++==================================================================++
+# ++ Files                                                             |
+# ++==================================================================++
 """
 AGENT Files
 """
@@ -383,6 +361,9 @@ fnode_move_file = "fnode_move.cpp"
 
 model = pyflamegpu.ModelDescription("metabolism")
 
+# ++==================================================================++
+# ++ Globals                                                           |
+# ++==================================================================++
 """
   GLOBAL SETTINGS
 """
@@ -441,7 +422,6 @@ env.newPropertyUInt("INCLUDE_FIBRE_NETWORK", INCLUDE_FIBRE_NETWORK)
 env.newPropertyFloat("MAX_SEARCH_RADIUS_FNODES",MAX_SEARCH_RADIUS_FNODES)
 env.newPropertyFloat("FIBRE_SEGMENT_K_ELAST",FIBRE_SEGMENT_K_ELAST)
 env.newPropertyFloat("FIBRE_SEGMENT_D_DUMPING",FIBRE_SEGMENT_D_DUMPING)
-env.newPropertyFloat("FIBRE_SEGMENT_MASS",FIBRE_SEGMENT_MASS)
 
 # Cell properties
 env.newPropertyUInt("INCLUDE_CELL_ORIENTATION", INCLUDE_CELL_ORIENTATION)
@@ -486,6 +466,9 @@ env.newPropertyUInt("DEBUG_DIFFUSION", False)
 env.newPropertyFloat("EPSILON", EPSILON)
 env.newPropertyUInt("MOVING_BOUNDARIES", MOVING_BOUNDARIES)
 
+# ++==================================================================++
+# ++ Messages                                                          |
+# ++==================================================================++
 """
   LOCATION MESSAGES
 """
@@ -520,7 +503,8 @@ if INCLUDE_FIBRE_NETWORK:
     fnode_bucket_location_message.newVariableFloat("vz")
     fnode_bucket_location_message.newVariableFloat("k_elast")
     fnode_bucket_location_message.newVariableFloat("d_dumping")
-    fnode_bucket_location_message.newVariableArrayUInt("linked_nodes", MAX_CONNECTIVITY) # store the index of the linked nodes, which is a proxy for the bucket id
+    fnode_bucket_location_message.newVariableArrayFloat("equilibrium_distance", MAX_CONNECTIVITY) # each segment can have a different equilibrium distance depending on the rest length assigned during network generation
+    fnode_bucket_location_message.newVariableArrayInt("linked_nodes", MAX_CONNECTIVITY) # store the index of the linked nodes, which is a proxy for the bucket id
 
 
 ECM_grid_location_message = model.newMessageArray3D("ECM_grid_location_message")
@@ -550,30 +534,33 @@ ECM_grid_location_message.newVariableUInt8("clamped_by_neg")
 ECM_grid_location_message.newVariableUInt8("clamped_bz_pos")
 ECM_grid_location_message.newVariableUInt8("clamped_bz_neg")
 
-# If message type is MessageSpatial3D, variables x, y, z are included internally.
-CELL_spatial_location_message = model.newMessageSpatial3D("CELL_spatial_location_message")
-CELL_spatial_location_message.setRadius(MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION)
-CELL_spatial_location_message.setMin(MIN_EXPECTED_BOUNDARY_POS, MIN_EXPECTED_BOUNDARY_POS, MIN_EXPECTED_BOUNDARY_POS)
-CELL_spatial_location_message.setMax(MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS)
-CELL_spatial_location_message.newVariableInt("id")
-CELL_spatial_location_message.newVariableFloat("vx")
-CELL_spatial_location_message.newVariableFloat("vy")
-CELL_spatial_location_message.newVariableFloat("vz")
-CELL_spatial_location_message.newVariableFloat("orx")
-CELL_spatial_location_message.newVariableFloat("ory")
-CELL_spatial_location_message.newVariableFloat("orz")
-CELL_spatial_location_message.newVariableFloat("alignment")
-CELL_spatial_location_message.newVariableArrayFloat("k_consumption", N_SPECIES) 
-CELL_spatial_location_message.newVariableArrayFloat("k_production", N_SPECIES) 
-CELL_spatial_location_message.newVariableArrayFloat("k_reaction", N_SPECIES) 
-CELL_spatial_location_message.newVariableArrayFloat("C_sp", N_SPECIES) 
-CELL_spatial_location_message.newVariableArrayFloat("M_sp", N_SPECIES)
-CELL_spatial_location_message.newVariableFloat("radius")
-CELL_spatial_location_message.newVariableFloat("cycle_phase")
-CELL_spatial_location_message.newVariableFloat("clock")
-CELL_spatial_location_message.newVariableInt("completed_cycles")
+if INCLUDE_CELLS:
+    # If message type is MessageSpatial3D, variables x, y, z are included internally.
+    CELL_spatial_location_message = model.newMessageSpatial3D("CELL_spatial_location_message")
+    CELL_spatial_location_message.setRadius(MAX_SEARCH_RADIUS_CELL_CELL_INTERACTION)
+    CELL_spatial_location_message.setMin(MIN_EXPECTED_BOUNDARY_POS, MIN_EXPECTED_BOUNDARY_POS, MIN_EXPECTED_BOUNDARY_POS)
+    CELL_spatial_location_message.setMax(MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS, MAX_EXPECTED_BOUNDARY_POS)
+    CELL_spatial_location_message.newVariableInt("id")
+    CELL_spatial_location_message.newVariableFloat("vx")
+    CELL_spatial_location_message.newVariableFloat("vy")
+    CELL_spatial_location_message.newVariableFloat("vz")
+    CELL_spatial_location_message.newVariableFloat("orx")
+    CELL_spatial_location_message.newVariableFloat("ory")
+    CELL_spatial_location_message.newVariableFloat("orz")
+    CELL_spatial_location_message.newVariableFloat("alignment")
+    CELL_spatial_location_message.newVariableArrayFloat("k_consumption", N_SPECIES) 
+    CELL_spatial_location_message.newVariableArrayFloat("k_production", N_SPECIES) 
+    CELL_spatial_location_message.newVariableArrayFloat("k_reaction", N_SPECIES) 
+    CELL_spatial_location_message.newVariableArrayFloat("C_sp", N_SPECIES) 
+    CELL_spatial_location_message.newVariableArrayFloat("M_sp", N_SPECIES)
+    CELL_spatial_location_message.newVariableFloat("radius")
+    CELL_spatial_location_message.newVariableFloat("cycle_phase")
+    CELL_spatial_location_message.newVariableFloat("clock")
+    CELL_spatial_location_message.newVariableInt("completed_cycles")
 
-
+# ++==================================================================++
+# ++ Agents                                                            |
+# ++==================================================================++
 """
   AGENTS
 """
@@ -608,7 +595,7 @@ if INCLUDE_FIBRE_NETWORK:
     fnode_agent.newVariableFloat("fz", 0.0)
     fnode_agent.newVariableFloat("k_elast")
     fnode_agent.newVariableFloat("d_dumping")
-    fnode_agent.newVariableFloat("mass")
+    fnode_agent.newVariableArrayFloat("equilibrium_distance", MAX_CONNECTIVITY) # each segment can have a different equilibrium distance depending on the rest length assigned during network generation
     fnode_agent.newVariableFloat("boundary_fx")  # boundary_f[A]: normal force coming from boundary [A] when elastic boundaries option is selected.
     fnode_agent.newVariableFloat("boundary_fy")
     fnode_agent.newVariableFloat("boundary_fz")
@@ -721,12 +708,12 @@ if INCLUDE_CELLS:
 """
 
 # Agent population initialization 
-# +--------------------------------------------------------------------+    
+# ----------------------------------------------------------------------    
 # This class is used to ensure that corner agents are assigned the first 8 ids
 class initAgentPopulations(pyflamegpu.HostFunction):
     def run(self, FLAMEGPU):
         # TODO: clean this line of globals
-        global INIT_ECM_CONCENTRATION_VALS, INIT_CELL_CONCENTRATION_VALS,INIT_CELL_CONC_MASS_VALS, INIT_ECM_SAT_CONCENTRATION_VALS, INIT_CELL_CONSUMPTION_RATES, INIT_CELL_PRODUCTION_RATES,INIT_CELL_REACTION_RATES, N_SPECIES, INCLUDE_DIFFUSION,INCLUDE_FIBRE_NETWORK, INCLUDE_CELLS, N_CELLS
+        global INIT_ECM_CONCENTRATION_VALS, INIT_CELL_CONCENTRATION_VALS,INIT_CELL_CONC_MASS_VALS, INIT_ECM_SAT_CONCENTRATION_VALS, INIT_CELL_CONSUMPTION_RATES, INIT_CELL_PRODUCTION_RATES,INIT_CELL_REACTION_RATES, N_SPECIES, INCLUDE_DIFFUSION,INCLUDE_FIBRE_NETWORK, INCLUDE_CELLS, N_CELLS, FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE, MAX_CONNECTIVITY
         # BOUNDARY CORNERS
         current_id = FLAMEGPU.environment.getPropertyUInt("CURRENT_ID")
         coord_boundary = FLAMEGPU.environment.getPropertyArrayFloat("COORDS_BOUNDARIES")
@@ -736,8 +723,8 @@ class initAgentPopulations(pyflamegpu.HostFunction):
         coord_boundary_y_neg = coord_boundary[3]
         coord_boundary_z_pos = coord_boundary[4]
         coord_boundary_z_neg = coord_boundary[5]
-        print("CORNERS:")
-        print("current_id:", current_id)
+        print("--- Initializing CORNERS (8)")
+        print("  |-> current_id:", current_id)
 
         for i in range(1, 9):
             instance = FLAMEGPU.agent("BCORNER").newAgent()
@@ -791,11 +778,10 @@ class initAgentPopulations(pyflamegpu.HostFunction):
         if INCLUDE_FIBRE_NETWORK:
             k_elast = FLAMEGPU.environment.getPropertyFloat("FIBRE_SEGMENT_K_ELAST")
             d_dumping = FLAMEGPU.environment.getPropertyFloat("FIBRE_SEGMENT_D_DUMPING")
-            mass = FLAMEGPU.environment.getPropertyFloat("FIBRE_SEGMENT_MASS")
             current_id = FLAMEGPU.environment.getPropertyUInt("CURRENT_ID")
             current_id += 1
-            print("FIBRE NODES:")
-            print("current_id:", current_id)    
+            print(f"--- Initializing FIBRE NODES ({N_NODES})")
+            print("  |-> current_id:", current_id)   
             count = -1
             offset = current_id
             for fn in range(N_NODES):
@@ -820,7 +806,7 @@ class initAgentPopulations(pyflamegpu.HostFunction):
                 instance.setVariableFloat("fz", 0.0)
                 instance.setVariableFloat("k_elast", k_elast)
                 instance.setVariableFloat("d_dumping", d_dumping)
-                instance.setVariableFloat("mass", mass) # TODO: REMOVE
+                instance.setVariableArrayFloat("equilibrium_distance", [FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE] * MAX_CONNECTIVITY) 
                 instance.setVariableFloat("boundary_fx", 0.0)
                 instance.setVariableFloat("boundary_fy", 0.0)
                 instance.setVariableFloat("boundary_fz", 0.0)
@@ -861,11 +847,10 @@ class initAgentPopulations(pyflamegpu.HostFunction):
         k_elast = FLAMEGPU.environment.getPropertyFloat("ECM_K_ELAST")
         d_dumping = FLAMEGPU.environment.getPropertyFloat("ECM_D_DUMPING")
         current_id = FLAMEGPU.environment.getPropertyUInt("CURRENT_ID")
-        current_id += 1
-        print("ECM:")
-        print("current_id:", current_id)
+        current_id += 1        
         agents_per_dir = FLAMEGPU.environment.getPropertyArrayUInt("ECM_AGENTS_PER_DIR")
-        print("agents per dir", agents_per_dir)
+        print(f"--- Initializing ECM (agents per dir:{agents_per_dir})")
+        print("  |-> current_id:", current_id)
         offset = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # +X,-X,+Y,-Y,+Z,-Z
         coords_x = np.linspace(coord_boundary[1] + offset[1], coord_boundary[0] - offset[0], agents_per_dir[0])
         coords_y = np.linspace(coord_boundary[3] + offset[3], coord_boundary[2] - offset[2], agents_per_dir[1])
@@ -919,6 +904,8 @@ class initAgentPopulations(pyflamegpu.HostFunction):
         if INCLUDE_CELLS:
             current_id = FLAMEGPU.environment.getPropertyUInt("CURRENT_ID")
             current_id += 1
+            print(f"--- Initializing CELLS ({N_CELLS})")
+            print("  |-> current_id:", current_id)
             count = -1
             cell_orientations = getRandomVectors3D(N_CELLS)
             k_elast = FLAMEGPU.environment.getPropertyFloat("CELL_K_ELAST")
@@ -1002,6 +989,9 @@ class initMacroProperties(pyflamegpu.HostFunction):
 initialMacroProperties = initMacroProperties()
 model.addInitFunction(initialMacroProperties)
 
+# ++==================================================================++
+# ++ Step functions                                                    |
+# ++==================================================================++
 """
   STEP FUNCTIONS
 """
@@ -1679,7 +1669,9 @@ model.addStepFunction(sdf)
 """
   END OF STEP FUNCTIONS
 """
-
+# ++==================================================================++
+# ++ Layers                                                            |
+# ++==================================================================++
 """
   Control flow
 """
@@ -1726,7 +1718,9 @@ if MOVING_BOUNDARIES:
     model.newLayer("L8_BCORNER_Movement").addAgentFunction("BCORNER", "bcorner_move")
     model.newLayer("L8_ECM_Movement").addAgentFunction("ECM", "ecm_move")
     
-
+# ++==================================================================++
+# ++ Logging                                                           |
+# ++==================================================================++
 """
   Logging
 """
@@ -1774,6 +1768,9 @@ if INCLUDE_FIBRE_NETWORK:
 step_log = pyflamegpu.StepLoggingConfig(logging_config)
 step_log.setFrequency(1) # if 1, data will be logged every step
 
+# ++==================================================================++
+# ++ Model runner                                                      |
+# ++==================================================================++
 """
   Create Model Runner
 """
@@ -1827,6 +1824,9 @@ else:
     simulation.setStepLog(step_log)
     simulation.setExitLog(logging_config)
 
+# ++==================================================================++
+# ++ Visualization                                                     |
+# ++==================================================================++
 """
   Create Visualisation
 """
@@ -1889,7 +1889,9 @@ if pyflamegpu.VISUALISATION and VISUALISATION and not ENSEMBLE:
 
     vis.activate()
 
-
+# ++==================================================================++
+# ++ Execution                                                         |
+# ++==================================================================++
 """
   Execution
 """

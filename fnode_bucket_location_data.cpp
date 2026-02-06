@@ -13,6 +13,10 @@ FLAMEGPU_AGENT_FUNCTION(fnode_bucket_location_data, flamegpu::MessageNone, flame
       int idx = FLAMEGPU->getVariable<int, MAX_CONNECTIVITY>("linked_nodes", i);
       FLAMEGPU->message_out.setVariable<int, MAX_CONNECTIVITY>("linked_nodes", i, idx);
   }
+  for (int i = 0; i < MAX_CONNECTIVITY; i++) {
+      float ncol = FLAMEGPU->getVariable<float, MAX_CONNECTIVITY>("equilibrium_distance", i);
+      FLAMEGPU->message_out.setVariable<float, MAX_CONNECTIVITY>("equilibrium_distance", i, ncol);
+  }
   FLAMEGPU->message_out.setKey(FLAMEGPU->getVariable<int>("id"));
 
   return flamegpu::ALIVE;

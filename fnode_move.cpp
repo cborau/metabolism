@@ -123,10 +123,7 @@ FLAMEGPU_AGENT_FUNCTION(fnode_move, flamegpu::MessageNone, flamegpu::MessageNone
   float f_bz_pos_y = 0.0;
   float f_bz_neg_x = 0.0;
   float f_bz_neg_y = 0.0;
-   
-  // Mass of the ecm agent
-  const float mass = FLAMEGPU->getVariable<float>("mass");
-
+ 
   //Forces acting on the agent
   float agent_fx = FLAMEGPU->getVariable<float>("fx");
   float agent_fy = FLAMEGPU->getVariable<float>("fy");

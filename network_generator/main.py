@@ -124,7 +124,21 @@ if __name__ == "__main__":
         # Save to a pickle file
         print(f'Saving network to {file_path}')
         with open('network_3d.pkl', 'wb') as f:
-            pickle.dump({'node_coords': new_nodes, 'connectivity': new_connectivity}, f)
+            pickle.dump(
+                {
+                    'node_coords': new_nodes,
+                    'connectivity': new_connectivity,
+                    'network_parameters': {
+                        'LX': LX,
+                        'LY': LY,
+                        'LZ': LZ,
+                        'L_FIBER': L_FIBER,
+                        'RHO': RHO,
+                        'EDGE_LENGTH': EDGE_LENGTH,
+                    },
+                },
+                f,
+            )
         connectivity = new_connectivity.copy()
         nodes = new_nodes.copy()
 

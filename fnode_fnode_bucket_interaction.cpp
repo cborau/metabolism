@@ -54,8 +54,12 @@ FLAMEGPU_DEVICE_FUNCTION void getMaxForceDir(float &dx, float &dy, float &dz,flo
 
 
 FLAMEGPU_AGENT_FUNCTION(fnode_fnode_bucket_interaction, flamegpu::MessageBucket, flamegpu::MessageNone) {
+  // Current simulation step
+  const unsigned int CURRENT_STEP = FLAMEGPU->getStepCounter();
+
   // Agent properties in local register
   int id = FLAMEGPU->getVariable<int>("id");
+  
 
   // Agent position
   float agent_x = FLAMEGPU->getVariable<float>("x");
@@ -77,7 +81,16 @@ FLAMEGPU_AGENT_FUNCTION(fnode_fnode_bucket_interaction, flamegpu::MessageBucket,
    
   // Dumping constant of the fibre 
   const float d_dumping = FLAMEGPU->getVariable<float>("d_dumping");
-  const float FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE = FLAMEGPU->environment.getProperty<float>("FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE");
+
+  float equilibrium_distance[MAX_CONNECTIVITY] = {};
+  for (int i = 0; i < MAX_CONNECTIVITY; i++) {
+    equilibrium_distance[i] = FLAMEGPU->getVariable<float, MAX_CONNECTIVITY>("equilibrium_distance", i);
+    if (id == 9 && CURRENT_STEP < 2) {
+      printf("DEBUG: id=%d step=%u equilibrium_distance[%d]=%f\n", id, CURRENT_STEP, i, equilibrium_distance[i]);
+    }
+  }
+
+
     
   float agent_fx = FLAMEGPU->getVariable<float>("fx");
   float agent_fy = FLAMEGPU->getVariable<float>("fy");
@@ -155,36 +168,43 @@ FLAMEGPU_AGENT_FUNCTION(fnode_fnode_bucket_interaction, flamegpu::MessageBucket,
 
       // relative speed <0 means nodes are getting closer
       relative_speed = vec3Length(agent_vx, agent_vy, agent_vz) * cosf(angle_agent_v_dir) - vec3Length(message_vx, message_vy, message_vz) * cosf(angle_message_v_dir);
-	    float relative_dist = (distance - FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE);
-
-      //print("DEBUG: ECM interaction id1: %d - id2: %d distance -> (%2.6f), relative_dist (%2.6f)\n", id, message_id, distance, relative_dist);
-      if (relative_dist < 0) {
-        //total_f = 0.0; // TEST: if fibre is under compression, it will buckle exerting no elastic resistance
-        total_f = relative_dist * (k_elast) + d_dumping * relative_speed;
+	    
+      // if CURRENT_STEP == 0, network is relaxed, so we can store the equilibrium distance between nodes. In subsequent steps, we can compute the relative distance (distance - equilibrium_distance) to determine if the fibre is under tension or compression.
+      if (CURRENT_STEP == 0) { 
+        equilibrium_distance[i] = distance;
+        FLAMEGPU->setVariable<float, MAX_CONNECTIVITY>("equilibrium_distance", i, equilibrium_distance[i]);
       }
       else {
-      // if total_f > 0, agents are attracted, if <0 agents are repelled
-        total_f = relative_dist * (k_elast) + d_dumping * relative_speed;  
+        float relative_dist = (distance - equilibrium_distance[i]);
+
+        //printf("DEBUG: ECM interaction id1: %d - id2: %d distance -> (%2.6f), relative_dist (%2.6f)\n", id, message_id, distance, relative_dist);
+        if (relative_dist < 0) {
+          //total_f = 0.0; // TEST: if fibre is under compression, it will buckle exerting no elastic resistance
+          total_f = relative_dist * (k_elast) + d_dumping * relative_speed;
+        }
+        else {
+        // if total_f > 0, agents are attracted, if <0 agents are repelled
+          total_f = relative_dist * (k_elast) + d_dumping * relative_speed;  
+        }
+        
+
+        if (total_f < 0) {
+          agent_f_compression += total_f;
+        } 
+        else {
+          agent_f_extension += total_f;
+          // store the absolute extensions in each direction
+          agent_fx_abs += fabsf(total_f * cos_x);
+          agent_fy_abs += fabsf(total_f * cos_y);
+          agent_fz_abs += fabsf(total_f * cos_z);
+        }
+
+        agent_elastic_energy += 0.5 * (total_f * total_f) / k_elast;
+
+        agent_fx += -1 * total_f * cos_x; // minus comes from the direction definition (agent-message)
+        agent_fy += -1 * total_f * cos_y;
+        agent_fz += -1 * total_f * cos_z;
       }
-      
-
-      if (total_f < 0) {
-        agent_f_compression += total_f;
-      } 
-      else {
-        agent_f_extension += total_f;
-        // store the absolute extensions in each direction
-        agent_fx_abs += fabsf(total_f * cos_x);
-        agent_fy_abs += fabsf(total_f * cos_y);
-        agent_fz_abs += fabsf(total_f * cos_z);
-      }
-
-      agent_elastic_energy += 0.5 * (total_f * total_f) / k_elast;
-
-      agent_fx += -1 * total_f * cos_x; // minus comes from the direction definition (agent-message)
-      agent_fy += -1 * total_f * cos_y;
-      agent_fz += -1 * total_f * cos_z;
-
 
       if (DEBUG_PRINTING == 1 && (id == 9 || id == 10 || id == 11 || id == 12)) {
          printf("ECM interaction [id1: %d - id2: %d] agent_pos (%2.6f, %2.6f, %2.6f), message_pos (%2.6f, %2.6f, %2.6f)\n", id, message_id, agent_x, agent_y, agent_z, message_x, message_y, message_z);

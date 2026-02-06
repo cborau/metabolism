@@ -1,3 +1,7 @@
+import math
+import os
+import pickle
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -59,6 +63,95 @@ def compute_expected_boundary_pos_from_corners(
     max_expected_pos = max(flat)
 
     return min_expected_pos, max_expected_pos, moved_corners
+
+
+def load_fibre_network(
+    file_name,
+    boundary_coords,
+    epsilon,
+    fibre_segment_equilibrium_distance,
+):
+    critical_error = False
+    nodes = None
+    connectivity = None
+
+    if os.path.exists(file_name):
+        print(f'Loading network from {file_name}')
+        with open(file_name, 'rb') as f:
+            data = pickle.load(f)
+            nodes = data['node_coords']
+            connectivity = data['connectivity']
+            network_parameters = data.get('network_parameters')
+        if network_parameters:
+            print('Loaded network parameters:')
+            for key, value in network_parameters.items():
+                print(f'  {key}: {value}')
+
+            domain_lx = abs(boundary_coords[1] - boundary_coords[0])
+            domain_ly = abs(boundary_coords[3] - boundary_coords[2])
+            domain_lz = abs(boundary_coords[5] - boundary_coords[4])
+
+            expected_lx = network_parameters.get('LX')
+            expected_ly = network_parameters.get('LY')
+            expected_lz = network_parameters.get('LZ')
+            expected_edge_length = network_parameters.get('EDGE_LENGTH')
+
+            if expected_lx is not None and not math.isclose(domain_lx, expected_lx, rel_tol=0.0, abs_tol=epsilon):
+                print('ERROR: Network LX does not match domain size.')
+                critical_error = True
+            if expected_ly is not None and not math.isclose(domain_ly, expected_ly, rel_tol=0.0, abs_tol=epsilon):
+                print('ERROR: Network LY does not match domain size.')
+                critical_error = True
+            if expected_lz is not None and not math.isclose(domain_lz, expected_lz, rel_tol=0.0, abs_tol=epsilon):
+                print('ERROR: Network LZ does not match domain size.')
+                critical_error = True
+            if expected_edge_length is not None and not math.isclose(
+                fibre_segment_equilibrium_distance,
+                expected_edge_length,
+                rel_tol=0.0,
+                abs_tol=epsilon,
+            ):
+                print(
+                    'WARNING: FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE does not match EDGE_LENGTH from network file. '
+                    f'Updating FIBRE_SEGMENT_EQUILIBRIUM_DISTANCE to match EDGE_LENGTH {expected_edge_length}.'
+                )
+                fibre_segment_equilibrium_distance = expected_edge_length
+        else:
+            print('WARNING: network_parameters not found in network_3d.pkl. Skipping compatibility checks.')
+        print(f'Network loaded: {nodes.shape[0]} nodes, {len(connectivity)} fibers')
+    else:
+        print(f"ERROR: file {file_name} containing network nodes and connectivity was not found")
+        critical_error = True
+        return nodes, connectivity, fibre_segment_equilibrium_distance, critical_error
+
+    msg_wrong_network_dimensions = (
+        "WARNING: Fibre network nodes do not coincide with boundary faces on at least two axes. "
+        "Check NODE_COORDS vs BOUNDARY_COORDS or regenerate the network."
+    )
+
+    x_max, x_min, y_max, y_min, z_max, z_min = boundary_coords
+    axes_with_both_faces = 0
+
+    has_x_pos = np.any(np.isclose(nodes[:, 0], x_max, atol=epsilon))
+    has_x_neg = np.any(np.isclose(nodes[:, 0], x_min, atol=epsilon))
+    if has_x_pos and has_x_neg:
+        axes_with_both_faces += 1
+
+    has_y_pos = np.any(np.isclose(nodes[:, 1], y_max, atol=epsilon))
+    has_y_neg = np.any(np.isclose(nodes[:, 1], y_min, atol=epsilon))
+    if has_y_pos and has_y_neg:
+        axes_with_both_faces += 1
+
+    has_z_pos = np.any(np.isclose(nodes[:, 2], z_max, atol=epsilon))
+    has_z_neg = np.any(np.isclose(nodes[:, 2], z_min, atol=epsilon))
+    if has_z_pos and has_z_neg:
+        axes_with_both_faces += 1
+
+    if axes_with_both_faces < 2:
+        print(msg_wrong_network_dimensions)
+        critical_error = True
+
+    return nodes, connectivity, fibre_segment_equilibrium_distance, critical_error
 
 #Helper functions for agent initialization
 # +--------------------------------------------------------------------+
@@ -482,9 +575,14 @@ class ModelParameterConfig:
         if bpos_over_time is not None and bforce_over_time is not None:
             for pos_col, force_col in [("xpos", "fxpos"), ("ypos", "fypos"), ("zpos", "fzpos")]:
                 if pos_col in bpos_over_time and force_col in bforce_over_time:
+                    x_vals = bpos_over_time[pos_col] - bpos_over_time[pos_col].iloc[0]
+                    y_vals = bforce_over_time[force_col]
+                    common_len = min(len(x_vals), len(y_vals))
+                    if common_len < 2:
+                        continue
                     ax5.plot(
-                        bpos_over_time[pos_col] - bpos_over_time[pos_col].iloc[0],
-                        bforce_over_time[force_col],
+                        x_vals.iloc[:common_len],
+                        y_vals.iloc[:common_len],
                         label=pos_col,
                     )
             if len(ax5.get_lines()) > 0:
